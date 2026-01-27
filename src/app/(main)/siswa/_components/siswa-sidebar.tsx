@@ -1,9 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
 import Image from "next/image";
-import { useSekolahInfoWithRefresh } from "@/hooks/useSWR";
+import { useSekolahInfo } from "@/hooks/useSWR";
 import {
   Sidebar,
   SidebarContent,
@@ -67,13 +66,8 @@ const menuItems = [
 
 export function SiswaSidebar() {
   const pathname = usePathname();
-  const { data: schoolInfoData, refresh } = useSekolahInfoWithRefresh();
+  const { data: schoolInfoData } = useSekolahInfo();
   const schoolInfo = (schoolInfoData as any)?.data;
-
-  // Force refresh on mount to ensure latest data
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
 
   const isActive = (url: string) => {
     if (url === "/siswa") {
@@ -89,7 +83,7 @@ export function SiswaSidebar() {
           <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-white p-1 border">
             {schoolInfo?.logo ? (
               <Image
-                src={`${schoolInfo.logo}?t=${Date.now()}`} // Cache busting with timestamp
+                src={schoolInfo.logo}
                 alt={schoolInfo.nama || 'School Logo'}
                 fill
                 className="object-contain"

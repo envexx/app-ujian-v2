@@ -86,8 +86,15 @@ export function GuruSidebar() {
   const { data: schoolInfoData, refresh } = useSekolahInfoWithRefresh();
   const schoolInfo = (schoolInfoData as any)?.data;
 
+  // Debug logging
+  console.log('Guru Sidebar - School Info Data:', schoolInfoData);
+  console.log('Guru Sidebar - School Info:', schoolInfo);
+  console.log('Guru Sidebar - Logo:', schoolInfo?.logo);
+  console.log('Guru Sidebar - Nama:', schoolInfo?.nama);
+
   // Force refresh on mount to ensure latest data
   useEffect(() => {
+    console.log('Guru Sidebar - Triggering refresh...');
     refresh();
   }, [refresh]);
 
