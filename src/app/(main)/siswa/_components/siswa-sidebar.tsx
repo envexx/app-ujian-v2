@@ -67,7 +67,7 @@ const menuItems = [
 export function SiswaSidebar() {
   const pathname = usePathname();
   const { data: schoolInfoData } = useSekolahInfoWithFallback();
-  const schoolInfo = (schoolInfoData as any)?.data;
+  const schoolInfo = schoolInfoData as any;
 
   const isActive = (url: string) => {
     if (url === "/siswa") {
