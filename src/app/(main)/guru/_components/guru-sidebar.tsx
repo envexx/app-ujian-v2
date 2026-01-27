@@ -86,15 +86,8 @@ export function GuruSidebar() {
   const { data: schoolInfoData, refresh } = useSekolahInfoWithRefresh();
   const schoolInfo = (schoolInfoData as any)?.data;
 
-  // Debug logging
-  console.log('Guru Sidebar - School Info Data:', schoolInfoData);
-  console.log('Guru Sidebar - School Info:', schoolInfo);
-  console.log('Guru Sidebar - Logo:', schoolInfo?.logo);
-  console.log('Guru Sidebar - Nama:', schoolInfo?.nama);
-
   // Force refresh on mount to ensure latest data
   useEffect(() => {
-    console.log('Guru Sidebar - Triggering refresh...');
     refresh();
   }, [refresh]);
 
@@ -112,11 +105,12 @@ export function GuruSidebar() {
           <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-white p-1 border">
             {schoolInfo?.logo ? (
               <Image
-                src={`${schoolInfo.logo}?t=${Date.now()}`} // Cache busting with timestamp
+                src={schoolInfo.logo}
                 alt={schoolInfo.nama || 'School Logo'}
                 fill
                 className="object-contain"
                 priority
+                unoptimized // Disable Next.js optimization for better loading
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
