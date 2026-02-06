@@ -22,11 +22,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { MathRenderer } from "@/components/ui/math-renderer";
-import { ArrowLeft, Clock, CheckCircle, LockKey, Warning, FloppyDisk, CircleNotch } from "@phosphor-icons/react";
+import { ArrowLeft, Clock, CheckCircle, LockKey, Warning, FloppyDisk, CircleNotch, Camera, ImageSquare, X } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { examQueue, generateChecksum } from "@/lib/exam-queue";
+import Webcam from "react-webcam";
 
 export default function SiswaUjianDetailPage() {
   const router = useRouter();
@@ -45,6 +46,14 @@ export default function SiswaUjianDetailPage() {
   
   const [ujianData, setUjianData] = useState<any>(null);
   const [answers, setAnswers] = useState<{ [key: string]: string }>({});
+  const [essayImages, setEssayImages] = useState<{ [key: string]: string }>({}); // Store base64 images for essay
+  const [essayInputMode, setEssayInputMode] = useState<{ [key: string]: 'text' | 'image' }>({}); // Input mode per question
+  const [showCameraDialog, setShowCameraDialog] = useState(false);
+  const [cameraQuestionId, setCameraQuestionId] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraAvailable, setCameraAvailable] = useState<boolean | null>(null);
+  const webcamRef = useRef<Webcam>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Queue-based auto-save states
   const [queueStatus, setQueueStatus] = useState({ total: 0, saved: 0, pending: 0, saving: 0, failed: 0 });
@@ -56,6 +65,8 @@ export default function SiswaUjianDetailPage() {
 
   // Get localStorage key for this exam
   const getStorageKey = () => `ujian_${params.id}_answers`;
+  const getImagesStorageKey = () => `ujian_${params.id}_images`;
+  const getInputModeStorageKey = () => `ujian_${params.id}_inputMode`;
 
   // Load answers from localStorage
   const loadAnswersFromStorage = () => {
@@ -72,6 +83,20 @@ export default function SiswaUjianDetailPage() {
         });
         setSaveStatus(status);
       }
+
+      // Load images
+      const storedImages = localStorage.getItem(getImagesStorageKey());
+      if (storedImages) {
+        const parsedImages = JSON.parse(storedImages);
+        setEssayImages(parsedImages);
+      }
+
+      // Load input modes
+      const storedModes = localStorage.getItem(getInputModeStorageKey());
+      if (storedModes) {
+        const parsedModes = JSON.parse(storedModes);
+        setEssayInputMode(parsedModes);
+      }
     } catch (error) {
       console.error('Error loading from localStorage:', error);
     }
@@ -83,6 +108,10 @@ export default function SiswaUjianDetailPage() {
     try {
       const current = { ...answers, [questionId]: answer };
       localStorage.setItem(getStorageKey(), JSON.stringify(current));
+      
+      // Also save images and modes
+      localStorage.setItem(getImagesStorageKey(), JSON.stringify(essayImages));
+      localStorage.setItem(getInputModeStorageKey(), JSON.stringify(essayInputMode));
     } catch (error) {
       console.error('Error saving to localStorage:', error);
     }
@@ -485,6 +514,104 @@ export default function SiswaUjianDetailPage() {
         setLastSaved((prev) => ({ ...prev, [questionId]: new Date() }));
       }
     }, 1000);
+  };
+
+  // Check camera availability
+  useEffect(() => {
+    if (showCameraDialog) {
+      navigator.mediaDevices
+        .getUserMedia({ video: true })
+        .then(() => {
+          setCameraAvailable(true);
+          setCameraError(null);
+        })
+        .catch((error) => {
+          console.error('Camera access error:', error);
+          setCameraAvailable(false);
+          if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+            setCameraError('Akses kamera ditolak. Silakan izinkan akses kamera di pengaturan browser.');
+          } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+            setCameraError('Kamera tidak ditemukan. Gunakan opsi upload file sebagai alternatif.');
+          } else {
+            setCameraError('Tidak dapat mengakses kamera. Gunakan opsi upload file sebagai alternatif.');
+          }
+        });
+    } else {
+      setCameraError(null);
+      setCameraAvailable(null);
+    }
+  }, [showCameraDialog]);
+
+  const capturePhoto = () => {
+    if (!webcamRef.current || !cameraQuestionId) return null;
+    try {
+      const imageSrc = webcamRef.current.getScreenshot();
+      return imageSrc;
+    } catch (error) {
+      console.error('Error capturing photo:', error);
+      return null;
+    }
+  };
+
+  const handleCapturePhoto = () => {
+    const imageSrc = capturePhoto();
+    if (imageSrc && cameraQuestionId) {
+      processImage(imageSrc, cameraQuestionId);
+    } else {
+      toast.error('Gagal mengambil foto. Coba lagi atau gunakan opsi upload file.');
+    }
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !cameraQuestionId) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('File harus berupa gambar');
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Ukuran file maksimal 10MB');
+      return;
+    }
+
+    // Read file as base64
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageSrc = e.target?.result as string;
+      if (imageSrc) {
+        processImage(imageSrc, cameraQuestionId);
+      }
+    };
+    reader.onerror = () => {
+      toast.error('Gagal membaca file');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const processImage = (imageSrc: string, questionId: string) => {
+    // Store image as base64
+    const newImages = { ...essayImages, [questionId]: imageSrc };
+    setEssayImages(newImages);
+    // Set input mode to image
+    const newModes = { ...essayInputMode, [questionId]: 'image' };
+    setEssayInputMode(newModes);
+    // Save base64 image as answer
+    handleAnswerChange(questionId, imageSrc, 'essay');
+    // Save to localStorage
+    try {
+      localStorage.setItem(getImagesStorageKey(), JSON.stringify(newImages));
+      localStorage.setItem(getInputModeStorageKey(), JSON.stringify(newModes));
+    } catch (error) {
+      console.error('Error saving images to localStorage:', error);
+    }
+    // Close dialog
+    setShowCameraDialog(false);
+    setCameraQuestionId(null);
+    toast.success('Foto berhasil ditambahkan');
   };
 
   const handleAnswerChange = (questionId: string, answer: string, questionType: 'multiple_choice' | 'essay') => {
@@ -916,24 +1043,123 @@ export default function SiswaUjianDetailPage() {
                 </>
               ) : (
                 <>
-                  <Textarea
-                    value={answers[currentQ.id] || ""}
-                    onChange={(e) => handleAnswerChange(currentQ.id, e.target.value, 'essay')}
-                    onPaste={(e) => {
-                      // Trigger immediate save on paste
-                      setTimeout(() => {
-                        const newValue = (e.currentTarget as HTMLTextAreaElement).value;
-                        handleAnswerChange(currentQ.id, newValue, 'essay');
-                        // Save immediately after paste
-                        setTimeout(() => {
-                          saveAnswerToQueue(currentQ.id, 'essay', newValue);
-                        }, 500);
-                      }, 0);
-                    }}
-                    placeholder="Tulis jawaban Anda di sini..."
-                    rows={8}
-                    className="mt-4 text-sm sm:text-base"
-                  />
+                  {/* Input Mode Toggle */}
+                  <div className="mt-4 flex gap-2 mb-3">
+                    <Button
+                      type="button"
+                      variant={essayInputMode[currentQ.id] !== 'image' ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setEssayInputMode({ ...essayInputMode, [currentQ.id]: 'text' });
+                      }}
+                    >
+                      <FloppyDisk className="w-4 h-4 mr-2" />
+                      Tulis Manual
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={essayInputMode[currentQ.id] === 'image' ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setCameraQuestionId(currentQ.id);
+                        setShowCameraDialog(true);
+                      }}
+                    >
+                      <Camera className="w-4 h-4 mr-2" />
+                      Foto Jawaban
+                    </Button>
+                  </div>
+
+                  {/* Text Input Mode */}
+                  {essayInputMode[currentQ.id] !== 'image' && (
+                    <>
+                      <Textarea
+                        value={answers[currentQ.id] || ""}
+                        onChange={(e) => handleAnswerChange(currentQ.id, e.target.value, 'essay')}
+                        onPaste={(e) => {
+                          // Trigger immediate save on paste
+                          setTimeout(() => {
+                            const newValue = (e.currentTarget as HTMLTextAreaElement).value;
+                            handleAnswerChange(currentQ.id, newValue, 'essay');
+                            // Save immediately after paste
+                            setTimeout(() => {
+                              saveAnswerToQueue(currentQ.id, 'essay', newValue);
+                            }, 500);
+                          }, 0);
+                        }}
+                        placeholder="Tulis jawaban Anda di sini..."
+                        rows={8}
+                        className="mt-2 text-sm sm:text-base"
+                      />
+                    </>
+                  )}
+
+                  {/* Image Input Mode */}
+                  {essayInputMode[currentQ.id] === 'image' && (
+                    <div className="mt-2 space-y-3">
+                      {essayImages[currentQ.id] ? (
+                        <div className="relative border-2 border-dashed border-gray-300 rounded-lg p-4">
+                          <img
+                            src={essayImages[currentQ.id]}
+                            alt="Jawaban essay"
+                            className="max-w-full h-auto rounded-lg mx-auto"
+                          />
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="absolute top-2 right-2"
+                            onClick={() => {
+                              const newImages = { ...essayImages };
+                              delete newImages[currentQ.id];
+                              setEssayImages(newImages);
+                              const newModes = { ...essayInputMode, [currentQ.id]: 'text' };
+                              setEssayInputMode(newModes);
+                              handleAnswerChange(currentQ.id, '', 'essay');
+                              // Update localStorage
+                              try {
+                                localStorage.setItem(getImagesStorageKey(), JSON.stringify(newImages));
+                                localStorage.setItem(getInputModeStorageKey(), JSON.stringify(newModes));
+                              } catch (error) {
+                                console.error('Error updating localStorage:', error);
+                              }
+                            }}
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="absolute bottom-2 right-2"
+                            onClick={() => {
+                              setCameraQuestionId(currentQ.id);
+                              setShowCameraDialog(true);
+                            }}
+                          >
+                            <Camera className="w-4 h-4 mr-2" />
+                            Ambil Foto Lagi
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                          <ImageSquare className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+                          <p className="text-gray-600 mb-4">Belum ada foto jawaban</p>
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              setCameraQuestionId(currentQ.id);
+                              setShowCameraDialog(true);
+                            }}
+                          >
+                            <Camera className="w-4 h-4 mr-2" />
+                            Ambil Foto
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Save status indicator for Essay */}
                   <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
                     {saveStatus[currentQ.id] === 'typing' && (
@@ -1118,6 +1344,104 @@ export default function SiswaUjianDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Camera Dialog for Essay Photo */}
+      <Dialog open={showCameraDialog} onOpenChange={setShowCameraDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Ambil Foto Jawaban</DialogTitle>
+            <DialogDescription>
+              Arahkan kamera ke lembar jawaban Anda dan pastikan tulisan jelas terlihat, atau upload foto dari galeri
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Camera Error Message */}
+            {cameraError && (
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">{cameraError}</p>
+              </div>
+            )}
+
+            {/* Camera View */}
+            {cameraAvailable !== false && (
+              <div className="relative w-full bg-black rounded-lg overflow-hidden" style={{ aspectRatio: '4/3' }}>
+                {cameraAvailable ? (
+                  <Webcam
+                    audio={false}
+                    ref={webcamRef}
+                    screenshotFormat="image/jpeg"
+                    videoConstraints={{
+                      facingMode: "environment", // Use back camera
+                      width: { ideal: 1280 },
+                      height: { ideal: 960 },
+                    }}
+                    className="w-full h-full object-cover"
+                    onUserMedia={() => {
+                      setCameraError(null);
+                    }}
+                    onUserMediaError={(error) => {
+                      console.error('Webcam error:', error);
+                      setCameraAvailable(false);
+                      setCameraError('Tidak dapat mengakses kamera. Gunakan opsi upload file sebagai alternatif.');
+                    }}
+                  />
+                ) : cameraAvailable === null ? (
+                  <div className="absolute inset-0 flex items-center justify-center text-white">
+                    <div className="text-center">
+                      <CircleNotch className="w-8 h-8 animate-spin mx-auto mb-2" />
+                      <p>Memuat kamera...</p>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {/* File Input (Always available as fallback) */}
+            <div className="space-y-2">
+              <Label htmlFor="photo-upload">Atau Upload Foto dari Galeri</Label>
+              <Input
+                id="photo-upload"
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleFileSelect}
+                className="cursor-pointer"
+              />
+              <p className="text-xs text-muted-foreground">
+                Pilih foto dari galeri atau ambil foto baru (mendukung iPhone/iOS)
+              </p>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCameraDialog(false);
+                  setCameraQuestionId(null);
+                  setCameraError(null);
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                  }
+                }}
+              >
+                Batal
+              </Button>
+              {cameraAvailable && (
+                <Button onClick={handleCapturePhoto}>
+                  <Camera className="w-4 h-4 mr-2" />
+                  Ambil Foto
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              {cameraAvailable 
+                ? 'Pastikan pencahayaan cukup dan tulisan jelas terlihat sebelum mengambil foto'
+                : 'Gunakan tombol "Upload Foto dari Galeri" untuk memilih atau mengambil foto'}
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
