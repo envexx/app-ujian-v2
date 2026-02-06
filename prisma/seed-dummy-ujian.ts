@@ -10,7 +10,7 @@ if (!connectionString) {
 
 const pool = new Pool({ 
   connectionString,
-  ssl: connectionString.includes('localhost') ? false : { rejectUnauthorized: false }
+  ssl: false // Coolify database doesn't support SSL
 });
 
 const adapter = new PrismaPg(pool);

@@ -3,9 +3,17 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({ 
+  connectionString: process.env.DATABASE_URL,
+  ssl: false // Coolify database doesn't support SSL
+});
 const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+
+/**
+ * FIX: Using 'as any' to bypass TypeScript strict checking
+ * due to version mismatch between @prisma/adapter-pg v7 and @prisma/client v6
+ */
+const prisma = new PrismaClient({ adapter } as any);
 
 async function seedSekolahInfo() {
   console.log('🌱 Seeding school information...');

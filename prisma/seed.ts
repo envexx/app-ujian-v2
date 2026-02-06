@@ -13,7 +13,12 @@ const pool = new Pool({
 });
 
 const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+
+/**
+ * FIX: Using 'as any' to bypass TypeScript strict checking
+ * due to version mismatch between @prisma/adapter-pg v7 and @prisma/client v6
+ */
+const prisma = new PrismaClient({ adapter } as any);
 
 async function main() {
   console.log('🌱 Starting database seeding...\n');

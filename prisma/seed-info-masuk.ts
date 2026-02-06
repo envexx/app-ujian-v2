@@ -8,11 +8,16 @@ console.log('🔗 Connecting to database...');
 
 const pool = new Pool({ 
   connectionString,
-  ssl: { rejectUnauthorized: false }
+  ssl: false // Coolify database doesn't support SSL
 });
 
 const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+
+/**
+ * FIX: Using 'as any' to bypass TypeScript strict checking
+ * due to version mismatch between @prisma/adapter-pg v7 and @prisma/client v6
+ */
+const prisma = new PrismaClient({ adapter } as any);
 
 async function seedInfoMasuk() {
   console.log('🌱 Seeding Info Masuk & Pulang...\n');
