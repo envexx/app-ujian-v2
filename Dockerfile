@@ -45,7 +45,6 @@ COPY --from=builder /app/node_modules ./node_modules
 
 # Copy Prisma schema, config, and seed files
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/package.json ./package.json
 
 # Set correct permissions
