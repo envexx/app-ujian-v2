@@ -3,8 +3,8 @@
 ## ⚠️ Masalah yang Ditemukan
 
 1. **Node.js Version**: Coolify menggunakan Node.js 18 (EOL), tapi project memerlukan Node.js 20+
-2. **Secrets in Dockerfile**: Nixpacks auto-generate Dockerfile dengan ARG/ENV untuk secrets
-3. **Nixpacks Cache**: Nixpacks masih menggunakan cache lama dengan format `nodejs-20_x` yang tidak valid
+2. **Prisma Version**: Project menggunakan Prisma 6.4.0 (stable) untuk kompatibilitas
+3. **Database SSL**: Coolify PostgreSQL tidak support SSL, perlu disable di konfigurasi
 
 ## ✅ Solusi (2 Opsi)
 

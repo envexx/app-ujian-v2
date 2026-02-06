@@ -44,22 +44,18 @@ Pastikan environment variables sudah di-set di Coolify:
    
 4. **Jalankan Migration**
    
-   **Cara 1: Buat .env file temporary (RECOMMENDED)**
+   **Set DATABASE_URL dan jalankan migration:**
    ```bash
    cd /app
-   cat > .env << 'EOF'
-   DATABASE_URL="postgres://postgres:T1ZjVSlg9DuhDVoDqq6EmGC81zufSuyyTGhpbX3DejKzZyCSLxsCCl8twkMaZj29@31.97.67.141:5436/postgres"
-   EOF
+   export DATABASE_URL="postgres://postgres:T1ZjVSlg9DuhDVoDqq6EmGC81zufSuyyTGhpbX3DejKzZyCSLxsCCl8twkMaZj29@31.97.67.141:5436/postgres"
    
    ./node_modules/.bin/prisma migrate deploy
    ```
    
-   **Cara 2: Gunakan Prisma CLI lokal**
+   Atau gunakan npx:
    ```bash
-   ./node_modules/.bin/prisma migrate deploy
+   npx prisma migrate deploy
    ```
-   
-   **Note:** Setelah Dockerfile diperbaiki (commit terbaru), `prisma.config.ts` akan tersedia di container.
    
 5. **Jalankan Seeder**
    ```bash
@@ -169,8 +165,8 @@ Untuk production, lebih baik gunakan Metode 1 atau 2 secara manual untuk seeding
 
 **Alternatif dengan npx (download on-the-fly):**
 ```bash
-npx --yes prisma@7.3.0 migrate deploy
-npx --yes tsx@4.21.0 prisma/seed.ts
+npx prisma migrate deploy
+npx tsx prisma/seed.ts
 ```
 
 ---
