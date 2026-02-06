@@ -8,8 +8,21 @@ export interface SessionData {
   isLoggedIn?: boolean;
 }
 
+// Validate SESSION_SECRET
+if (!process.env.SESSION_SECRET) {
+  console.error('⚠️  WARNING: SESSION_SECRET tidak dikonfigurasi di environment variable!');
+  console.error('   Session security akan lemah. Pastikan untuk mengatur SESSION_SECRET di .env');
+}
+
 export const sessionOptions: SessionOptions = {
-  password: process.env.SESSION_SECRET || 'complex_password_at_least_32_characters_long_for_security',
+  password: process.env.SESSION_SECRET || (() => {
+    // Generate a random secret if not provided (for development only)
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('⚠️  Using auto-generated SESSION_SECRET for development. Set SESSION_SECRET in .env for production!');
+      return 'dev-secret-key-change-in-production-' + Math.random().toString(36).substring(2, 15);
+    }
+    throw new Error('SESSION_SECRET harus dikonfigurasi di environment variable untuk production!');
+  })(),
   cookieName: 'e-learning-session',
   cookieOptions: {
     secure: process.env.NODE_ENV === 'production',

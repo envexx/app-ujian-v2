@@ -3,12 +3,12 @@ import { getSession } from '@/lib/session';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 // Cloudflare R2 Configuration
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '6d16bbd1d7b7b0aed592e9d62822a01e';
-const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
+const R2_ENDPOINT = R2_ACCOUNT_ID ? `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : '';
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'e-learning';
-const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://pub-48d5f2d21ee94c799a380b5db2425529.r2.dev';
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || '';
 
 // Initialize S3 client for Cloudflare R2
 const s3Client = new S3Client({
@@ -22,6 +22,14 @@ const s3Client = new S3Client({
 
 export async function POST(request: Request) {
   try {
+    // Validate R2 configuration
+    if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_PUBLIC_URL) {
+      return NextResponse.json(
+        { success: false, error: 'R2 configuration tidak lengkap. Pastikan R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, dan R2_PUBLIC_URL dikonfigurasi di environment variable.' },
+        { status: 500 }
+      );
+    }
+
     const session = await getSession();
 
     if (!session.isLoggedIn) {

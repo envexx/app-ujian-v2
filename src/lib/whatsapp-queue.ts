@@ -9,12 +9,16 @@ interface MessageQueue {
 let messageQueue: MessageQueue[] = [];
 let isProcessing = false;
 
-const WHATSAPP_API_URL = 'https://api.moonwa.id/api/send-message';
-const WHATSAPP_API_KEY = '3633a6dfa956f2c766a611912fa1790e0d6c6623';
+const WHATSAPP_API_URL = process.env.WHATSAPP_API_URL || 'https://api.moonwa.id/api/send-message';
+const WHATSAPP_API_KEY = process.env.WHATSAPP_API_KEY || '';
 const DELAY_BETWEEN_MESSAGES = 10000; // 10 detik
 
 // Fungsi untuk mengirim pesan ke WhatsApp API
 async function sendWhatsAppMessage(receiver: string, message: string) {
+  if (!WHATSAPP_API_KEY) {
+    throw new Error('WHATSAPP_API_KEY tidak dikonfigurasi di environment variable');
+  }
+
   try {
     const response = await fetch(WHATSAPP_API_URL, {
       method: 'POST',

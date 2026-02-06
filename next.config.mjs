@@ -4,6 +4,8 @@ const nextConfig = {
   compiler: {
     removeConsole: process.env.NODE_ENV === "production",
   },
+  // Enable standalone output for Docker
+  output: 'standalone',
   async redirects() {
     return [
       {
