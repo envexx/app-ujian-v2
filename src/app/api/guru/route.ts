@@ -38,6 +38,38 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { mapelIds = [], kelasIds = [], ...guruData } = body;
     
+    // Validate required fields
+    if (!guruData.email || !guruData.nipUsername || !guruData.nama) {
+      return NextResponse.json(
+        { success: false, error: 'Email, NIP, dan Nama wajib diisi' },
+        { status: 400 }
+      );
+    }
+    
+    // Check if email already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: guruData.email },
+    });
+    
+    if (existingUser) {
+      return NextResponse.json(
+        { success: false, error: 'Email sudah digunakan. Silakan gunakan email lain.' },
+        { status: 400 }
+      );
+    }
+    
+    // Check if NIP already exists
+    const existingGuru = await prisma.guru.findFirst({
+      where: { nipUsername: guruData.nipUsername },
+    });
+    
+    if (existingGuru) {
+      return NextResponse.json(
+        { success: false, error: 'NIP sudah digunakan. Silakan gunakan NIP lain.' },
+        { status: 400 }
+      );
+    }
+    
     // Hash default password
     const defaultPassword = 'guru123';
     const hashedPassword = await bcrypt.hash(defaultPassword, 10);
@@ -81,10 +113,28 @@ export async function POST(request: Request) {
       data: newGuru,
       message: 'Guru berhasil ditambahkan',
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating guru:', error);
+    
+    // Handle Prisma unique constraint errors
+    if (error.code === 'P2002') {
+      const field = error.meta?.target?.[0] || 'field';
+      let message = 'Data sudah ada di sistem';
+      
+      if (field === 'email') {
+        message = 'Email sudah digunakan. Silakan gunakan email lain.';
+      } else if (field === 'nipUsername') {
+        message = 'NIP sudah digunakan. Silakan gunakan NIP lain.';
+      }
+      
+      return NextResponse.json(
+        { success: false, error: message },
+        { status: 400 }
+      );
+    }
+    
     return NextResponse.json(
-      { success: false, error: 'Failed to create guru' },
+      { success: false, error: error.message || 'Gagal menambahkan guru' },
       { status: 500 }
     );
   }
@@ -160,18 +210,32 @@ export async function DELETE(request: Request) {
       );
     }
     
-    await prisma.guru.delete({
+    // Get guru to find userId
+    const guru = await prisma.guru.findUnique({
       where: { id },
+      select: { userId: true },
+    });
+    
+    if (!guru) {
+      return NextResponse.json(
+        { success: false, error: 'Guru tidak ditemukan' },
+        { status: 404 }
+      );
+    }
+    
+    // Delete User (will cascade delete Guru automatically)
+    await prisma.user.delete({
+      where: { id: guru.userId },
     });
     
     return NextResponse.json({
       success: true,
       message: 'Guru berhasil dihapus',
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting guru:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to delete guru' },
+      { success: false, error: error.message || 'Gagal menghapus guru' },
       { status: 500 }
     );
   }

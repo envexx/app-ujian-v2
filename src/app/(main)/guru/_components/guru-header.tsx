@@ -22,18 +22,25 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Bell, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function GuruHeader() {
   const router = useRouter();
+  const { user, logout, isLoading } = useAuth();
 
-  const handleLogout = () => {
-    // Clear any stored auth data
-    localStorage.removeItem("userRole");
-    localStorage.removeItem("authToken");
-    
-    toast.success("Berhasil keluar");
-    router.push("/");
+  const handleLogout = async () => {
+    await logout();
+  };
+
+  // Get initials from name
+  const getInitials = (name?: string) => {
+    if (!name) return "GR";
+    const parts = name.split(" ");
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
   };
   return (
     <header className="flex h-16 shrink-0 items-center gap-2 border-b px-2 md:px-4 w-full">
@@ -60,33 +67,53 @@ export function GuruHeader() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-              <Avatar className="h-10 w-10">
-                <AvatarImage src="/uploads/profiles/guru1.jpg" alt="Guru" />
-                <AvatarFallback className="bg-gradient-to-r from-[#0221CD] to-[#0221CD]/80 text-white">
-                  BH
-                </AvatarFallback>
-              </Avatar>
+              {isLoading ? (
+                <Skeleton className="h-10 w-10 rounded-full" />
+              ) : (
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={user?.profile?.foto || undefined} alt={user?.profile?.nama || "Guru"} />
+                  <AvatarFallback className="bg-gradient-to-r from-[#0221CD] to-[#0221CD]/80 text-white">
+                    {getInitials(user?.profile?.nama)}
+                  </AvatarFallback>
+                </Avatar>
+              )}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" align="end" forceMount>
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">Dr. Budi Hartono, M.Pd</p>
-                <p className="text-xs leading-none text-muted-foreground">
-                  budi.hartono@sekolah.com
-                </p>
+            {isLoading ? (
+              <div className="p-2 space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-3 w-3/4" />
               </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <User className="mr-2 h-4 w-4" />
-              <span>Profil</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Keluar</span>
-            </DropdownMenuItem>
+            ) : (
+              <>
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {user?.profile?.nama || "Guru"}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user?.email || user?.profile?.email || ""}
+                    </p>
+                    {user?.profile?.nip && (
+                      <p className="text-xs leading-none text-muted-foreground">
+                        NIP: {user.profile.nip}
+                      </p>
+                    )}
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => router.push('/guru/profil')}>
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Profil</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Keluar</span>
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
