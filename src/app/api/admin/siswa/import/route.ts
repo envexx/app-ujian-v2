@@ -70,7 +70,6 @@ export async function POST(request: Request) {
         const nis = String(row['NIS'] || row['nis'] || '').trim();
         const nisn = String(row['NISN'] || row['nisn'] || '').trim();
         const nama = String(row['Nama'] || row['nama'] || '').trim();
-        const email = String(row['Email'] || row['email'] || '').trim();
         const kelasNama = String(row['Kelas'] || row['kelas'] || '').trim();
         const jenisKelamin = String(row['Jenis Kelamin'] || row['Jenis Kelamin'] || row['jenis_kelamin'] || 'L').trim().toUpperCase();
         const tanggalLahir = row['Tanggal Lahir'] || row['tanggal_lahir'] || row['TanggalLahir'];
@@ -80,17 +79,9 @@ export async function POST(request: Request) {
         const noTelpWali = String(row['No. Telepon Wali'] || row['No Telepon Wali'] || row['no_telepon_wali'] || row['NoTeleponWali'] || '').trim();
 
         // Validation
-        if (!nis || !nisn || !nama || !email || !kelasNama) {
+        if (!nis || !nisn || !nama || !kelasNama) {
           results.failed++;
-          results.errors.push(`Baris ${rowNumber}: Data tidak lengkap (NIS, NISN, Nama, Email, Kelas wajib diisi)`);
-          continue;
-        }
-
-        // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-          results.failed++;
-          results.errors.push(`Baris ${rowNumber}: Format email tidak valid`);
+          results.errors.push(`Baris ${rowNumber}: Data tidak lengkap (NIS, NISN, Nama, Kelas wajib diisi)`);
           continue;
         }
 
@@ -109,12 +100,11 @@ export async function POST(request: Request) {
           continue;
         }
 
-        // Parse tanggal lahir
-        let tanggalLahirDate: Date;
+        // Parse tanggal lahir (optional)
+        let tanggalLahirDate: Date | undefined;
         if (tanggalLahir) {
           if (typeof tanggalLahir === 'number') {
-            // Excel date serial number (days since 1900-01-01)
-            const excelEpoch = new Date(1899, 11, 30); // Excel epoch is Dec 30, 1899
+            const excelEpoch = new Date(1899, 11, 30);
             tanggalLahirDate = new Date(excelEpoch.getTime() + tanggalLahir * 24 * 60 * 60 * 1000);
           } else if (typeof tanggalLahir === 'string') {
             tanggalLahirDate = new Date(tanggalLahir);
@@ -122,14 +112,8 @@ export async function POST(request: Request) {
             tanggalLahirDate = new Date(tanggalLahir);
           }
           if (isNaN(tanggalLahirDate.getTime())) {
-            results.failed++;
-            results.errors.push(`Baris ${rowNumber}: Format tanggal lahir tidak valid`);
-            continue;
+            tanggalLahirDate = undefined;
           }
-        } else {
-          results.failed++;
-          results.errors.push(`Baris ${rowNumber}: Tanggal lahir wajib diisi`);
-          continue;
         }
 
         // Check if siswa already exists
@@ -138,58 +122,57 @@ export async function POST(request: Request) {
             OR: [
               { nis },
               { nisn },
-              { email },
             ],
           },
         });
 
         if (existingSiswa) {
           results.failed++;
-          results.errors.push(`Baris ${rowNumber}: Siswa dengan NIS/NISN/Email sudah ada`);
+          results.errors.push(`Baris ${rowNumber}: Siswa dengan NIS/NISN sudah ada`);
           continue;
         }
 
+        // Auto-generate email for User record
+        const autoEmail = `${nis}@siswa.local`;
+
         // Check if user already exists
         const existingUser = await prisma.user.findUnique({
-          where: { email },
+          where: { email: autoEmail },
         });
 
         if (existingUser) {
           results.failed++;
-          results.errors.push(`Baris ${rowNumber}: Email sudah digunakan`);
+          results.errors.push(`Baris ${rowNumber}: Akun dengan NIS ${nis} sudah ada`);
           continue;
         }
 
         // Create user and siswa in transaction
         await prisma.$transaction(async (tx) => {
-          // Create user
-          const defaultPassword = await bcrypt.hash(nisn, 10); // Use NISN as default password
+          const defaultPassword = await bcrypt.hash(nisn, 10);
           const user = await tx.user.create({
             data: {
-              email,
+              email: autoEmail,
               password: defaultPassword,
               role: 'SISWA',
               isActive: true,
             },
           });
 
-          // Create siswa
-          await tx.siswa.create({
-            data: {
-              userId: user.id,
-              nis,
-              nisn,
-              nama,
-              email,
-              kelasId,
-              jenisKelamin,
-              tanggalLahir: tanggalLahirDate,
-              alamat: alamat || '',
-              noTelp: noTelp || null,
-              namaWali: namaWali || '',
-              noTelpWali: noTelpWali || '',
-            },
-          });
+          const siswaData: any = {
+            userId: user.id,
+            nis,
+            nisn,
+            nama,
+            kelasId,
+            jenisKelamin,
+          };
+          if (tanggalLahirDate) siswaData.tanggalLahir = tanggalLahirDate;
+          if (alamat) siswaData.alamat = alamat;
+          if (noTelp) siswaData.noTelp = noTelp;
+          if (namaWali) siswaData.namaWali = namaWali;
+          if (noTelpWali) siswaData.noTelpWali = noTelpWali;
+
+          await tx.siswa.create({ data: siswaData });
         });
 
         results.success++;

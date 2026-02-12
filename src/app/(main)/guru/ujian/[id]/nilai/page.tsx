@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 import { useRouter, useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { MathRenderer } from "@/components/ui/math-renderer";
 import { useAuth } from "@/hooks/useAuth";
 import {
   Table,
@@ -30,7 +32,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
-  Eye,
   Download,
   ArrowsClockwise,
   CircleNotch,
@@ -39,17 +40,102 @@ import {
   CheckCircle,
   XCircle,
   FileText,
+  Star,
+  Warning,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { id } from "date-fns/locale";
+import { id as localeId } from "date-fns/locale";
 
 // Helper function to strip HTML tags for clean display
 const stripHtmlTags = (html: string): string => {
   if (!html) return '';
-  // Remove HTML tags using regex
   return html.replace(/<[^>]*>/g, '').trim();
 };
+
+// Soal type labels
+const TIPE_LABELS: Record<string, string> = {
+  PILIHAN_GANDA: 'PG',
+  ESSAY: 'Essay',
+  ISIAN_SINGKAT: 'Isian',
+  PENCOCOKAN: 'Cocok',
+  BENAR_SALAH: 'B/S',
+};
+
+const TIPE_FULL_LABELS: Record<string, string> = {
+  PILIHAN_GANDA: 'Pilihan Ganda',
+  ESSAY: 'Essay',
+  ISIAN_SINGKAT: 'Isian Singkat',
+  PENCOCOKAN: 'Pencocokan',
+  BENAR_SALAH: 'Benar/Salah',
+};
+
+// Recursively unwrap nested { jawaban: ... } to get the actual value
+function unwrapJawaban(val: any): any {
+  let result = val;
+  let depth = 0;
+  while (result && typeof result === 'object' && result.jawaban !== undefined && depth < 5) {
+    result = result.jawaban;
+    depth++;
+  }
+  return result;
+}
+
+// Get short answer display for jawaban table
+function getJawabanDisplay(soal: any, jawaban: any): { text: string; isCorrect: boolean | null } {
+  if (!jawaban) return { text: '-', isCorrect: null };
+
+  const jawabanData = jawaban.jawaban;
+  const isCorrect = jawaban.isCorrect;
+
+  switch (soal.tipe) {
+    case 'PILIHAN_GANDA': {
+      const selected = unwrapJawaban(jawabanData);
+      return { text: typeof selected === 'string' ? selected : JSON.stringify(selected), isCorrect };
+    }
+    case 'BENAR_SALAH': {
+      const val = unwrapJawaban(jawabanData);
+      return { text: val === true ? 'Benar' : val === false ? 'Salah' : '-', isCorrect };
+    }
+    case 'ISIAN_SINGKAT': {
+      const val = unwrapJawaban(jawabanData);
+      return { text: typeof val === 'string' ? val : '-', isCorrect };
+    }
+    case 'ESSAY': {
+      const val = unwrapJawaban(jawabanData);
+      const text = typeof val === 'string' ? stripHtmlTags(val) : '-';
+      return { text: text.length > 60 ? text.substring(0, 60) + '...' : text, isCorrect: null };
+    }
+    case 'PENCOCOKAN': {
+      const mapping = unwrapJawaban(jawabanData);
+      if (typeof mapping === 'object' && mapping !== null) {
+        return { text: `${Object.keys(mapping).length} koneksi`, isCorrect };
+      }
+      return { text: '-', isCorrect };
+    }
+    default:
+      return { text: '-', isCorrect: null };
+  }
+}
+
+// Get answer key display for a soal
+function getKunciDisplay(soal: any): string {
+  const data = soal.data;
+  switch (soal.tipe) {
+    case 'PILIHAN_GANDA':
+      return data?.kunciJawaban || '-';
+    case 'BENAR_SALAH':
+      return data?.kunciJawaban === true ? 'Benar' : 'Salah';
+    case 'ISIAN_SINGKAT':
+      return Array.isArray(data?.kunciJawaban) ? data.kunciJawaban.join(', ') : '-';
+    case 'ESSAY':
+      return data?.kunciJawaban ? stripHtmlTags(data.kunciJawaban).substring(0, 40) + '...' : '-';
+    case 'PENCOCOKAN':
+      return data?.jawaban ? `${Object.keys(data.jawaban).length} pasangan` : '-';
+    default:
+      return '-';
+  }
+}
 
 const fetcher = async (url: string) => {
   const res = await fetch(url);
@@ -65,8 +151,6 @@ export default function UjianNilaiPage() {
   const [selectedSubmission, setSelectedSubmission] = useState<any>(null);
   const [essayGrades, setEssayGrades] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState("nilai");
-  const [gradeConfig, setGradeConfig] = useState({ bobotPG: 50, bobotEssay: 50 });
-  const [configLoaded, setConfigLoaded] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -75,30 +159,7 @@ export default function UjianNilaiPage() {
     fetcher
   );
 
-  // Load grading config from database
-  useEffect(() => {
-    const loadConfig = async () => {
-      try {
-        const response = await fetch('/api/guru/settings/grade-config');
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-          setGradeConfig({
-            bobotPG: result.data.pilihanGanda?.weight || 50,
-            bobotEssay: result.data.essay?.weight || 50,
-          });
-        }
-      } catch (e) {
-        console.error('Error loading grade config:', e);
-      } finally {
-        setConfigLoaded(true);
-      }
-    };
-    
-    loadConfig();
-  }, []);
-
-  if (authLoading || isLoading || !configLoaded) {
+  if (authLoading || isLoading) {
     return <LoadingSpinner />;
   }
 
@@ -119,8 +180,11 @@ export default function UjianNilaiPage() {
   }
 
   const ujian = data.data.ujian;
-  const soalEssay = data.data.soalEssay || [];
-  const submissions = data.data.submissions || [];
+  const soalList: any[] = data.data.soal || [];
+  const submissions: any[] = data.data.submissions || [];
+
+  // Filter essay soal for grading dialog
+  const essaySoal = soalList.filter((s: any) => s.tipe === 'ESSAY');
 
   const handleGrade = (submission: any) => {
     if (submission.status === 'belum') {
@@ -129,23 +193,25 @@ export default function UjianNilaiPage() {
     }
 
     setSelectedSubmission(submission);
-    
-    // Initialize essay grades from existing data
-    const grades = soalEssay.map((soal: any) => {
-      const existingJawaban = submission.jawabanEssay?.find(
+
+    // Initialize essay grades from existing jawaban
+    const grades = essaySoal.map((soal: any) => {
+      const existingJawaban = submission.jawaban?.find(
         (j: any) => j.soalId === soal.id
       );
       return {
-        id: existingJawaban?.id || null,
+        jawabanId: existingJawaban?.id || null,
         soalId: soal.id,
+        nomor: soal.nomor,
         pertanyaan: soal.pertanyaan,
-        kunciJawaban: soal.kunciJawaban,
-        jawaban: existingJawaban?.jawaban || '',
-        nilai: existingJawaban?.nilai || 0,
+        poin: soal.poin,
+        kunciJawaban: soal.data?.kunciJawaban || '',
+        jawaban: existingJawaban?.jawaban,
+        nilai: existingJawaban?.nilai ?? 0,
         feedback: existingJawaban?.feedback || '',
       };
     });
-    
+
     setEssayGrades(grades);
     setIsGradingOpen(true);
   };
@@ -153,46 +219,30 @@ export default function UjianNilaiPage() {
   const handleExportExcel = async () => {
     setIsExporting(true);
     try {
-      // Dynamic import xlsx
       const XLSX = await import('xlsx');
-      
-      // Prepare data for Excel
+
       const excelData = submissions.map((s: any) => ({
         'Nama Siswa': s.siswa,
+        'NISN': s.nisn || '-',
         'Kelas': ujian.kelas?.join(', ') || '-',
         'Mata Pelajaran': ujian.mapel,
-        'Tanggal Submit': s.submittedAt ? format(new Date(s.submittedAt), "dd MMM yyyy HH:mm", { locale: id }) : '-',
-        'Nilai PG': s.nilaiPG ?? '-',
-        'Nilai Essay': s.nilaiEssay ?? '-',
+        'Tanggal Submit': s.submittedAt ? format(new Date(s.submittedAt), "dd MMM yyyy HH:mm", { locale: localeId }) : '-',
+        'Nilai Otomatis': s.nilaiAuto ?? '-',
+        'Nilai Essay': s.nilaiManual ?? '-',
         'Nilai Total': s.nilaiTotal ?? '-',
-        'Status': s.status === 'completed' ? 'Sudah' : s.status === 'pending' ? 'Pending' : 'Belum',
+        'Status': s.status === 'sudah' ? 'Selesai' : s.status === 'perlu_dinilai' ? 'Perlu Dinilai' : 'Belum',
       }));
 
-      // Create worksheet
       const ws = XLSX.utils.json_to_sheet(excelData);
-      
-      // Set column widths
       ws['!cols'] = [
-        { wch: 25 }, // Nama Siswa
-        { wch: 15 }, // Kelas
-        { wch: 20 }, // Mata Pelajaran
-        { wch: 20 }, // Tanggal Submit
-        { wch: 12 }, // Nilai PG
-        { wch: 12 }, // Nilai Essay
-        { wch: 12 }, // Nilai Total
-        { wch: 12 }, // Status
+        { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 20 },
+        { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
       ];
 
-      // Create workbook
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Nilai Siswa');
-
-      // Generate filename
       const filename = `Nilai_${ujian.judul.replace(/[^a-zA-Z0-9]/g, '_')}_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`;
-
-      // Download file
       XLSX.writeFile(wb, filename);
-
       toast.success('File Excel berhasil diunduh');
     } catch (error) {
       console.error('Error exporting Excel:', error);
@@ -208,10 +258,7 @@ export default function UjianNilaiPage() {
       const response = await fetch(`/api/guru/ujian/${params.id}/nilai/recalculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bobotPG: gradeConfig.bobotPG,
-          bobotEssay: gradeConfig.bobotEssay,
-        }),
+        body: JSON.stringify({}),
       });
 
       const result = await response.json();
@@ -242,13 +289,11 @@ export default function UjianNilaiPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           submissionId: selectedSubmission.id,
-          jawabanEssay: essayGrades.map(g => ({
-            id: g.id,
+          grades: essayGrades.map(g => ({
+            jawabanId: g.jawabanId,
             nilai: g.nilai,
             feedback: g.feedback,
           })),
-          bobotPG: gradeConfig.bobotPG,
-          bobotEssay: gradeConfig.bobotEssay,
         }),
       });
 
@@ -256,7 +301,7 @@ export default function UjianNilaiPage() {
 
       if (response.ok && result.success) {
         await mutate();
-        toast.success("Nilai essay berhasil disimpan");
+        toast.success("Nilai berhasil disimpan");
         setIsGradingOpen(false);
         setSelectedSubmission(null);
       } else {
@@ -269,61 +314,59 @@ export default function UjianNilaiPage() {
   };
 
   const stats = {
-    sudahMengerjakan: submissions.filter((s: any) => s.status === 'sudah').length,
+    sudahMengerjakan: submissions.filter((s: any) => s.status !== 'belum').length,
     belumMengerjakan: submissions.filter((s: any) => s.status === 'belum').length,
+    perluDinilai: submissions.filter((s: any) => s.status === 'perlu_dinilai').length,
   };
 
   const handleExportJawaban = () => {
     try {
-      // Get soal data
-      const soalPG = data?.data?.soalPG || [];
-      const soalEssayData = data?.data?.soalEssay || [];
-      
-      // Prepare data for CSV
       const exportData = submissions.map((s: any, idx: number) => {
         const row: any = {
           'No': idx + 1,
           'Nama Siswa': s.siswa,
-          'Kelas': ujian.kelas?.join(', ') || '-',
+          'NISN': s.nisn || '-',
         };
-        
-        // Add PG answers
-        soalPG.forEach((soal: any, i: number) => {
-          const jawaban = s.jawabanPG?.find((j: any) => j.soalId === soal.id);
-          row[`PG${i + 1}`] = jawaban?.jawaban || '-';
+
+        soalList.forEach((soal: any) => {
+          const jawaban = s.jawaban?.find((j: any) => j.soalId === soal.id);
+          const display = getJawabanDisplay(soal, jawaban);
+          row[`${TIPE_LABELS[soal.tipe] || soal.tipe}${soal.nomor}`] = display.text;
         });
-        
-        // Add Essay answers
-        soalEssayData.forEach((soal: any, i: number) => {
-          const jawaban = s.jawabanEssay?.find((j: any) => j.soalId === soal.id);
-          row[`Essay${i + 1}`] = jawaban?.jawaban ? stripHtmlTags(jawaban.jawaban) : '-';
-        });
-        
+
+        row['Nilai Total'] = s.nilaiTotal ?? '-';
         return row;
       });
-      
-      // Convert to CSV
-      const headers = Object.keys(exportData[0] || {});
+
+      if (exportData.length === 0) {
+        toast.error('Tidak ada data untuk diekspor');
+        return;
+      }
+
+      const headers = Object.keys(exportData[0]);
       const csv = [
         headers.join(','),
-        ...exportData.map((row: any) => 
+        ...exportData.map((row: any) =>
           headers.map(h => `"${(row[h] || '').toString().replace(/"/g, '""')}"`).join(',')
         )
       ].join('\n');
-      
-      // Download CSV
+
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `Jawaban_${ujian.judul.replace(/[^a-zA-Z0-9]/g, '_')}_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv`;
       link.click();
-      
       toast.success('File CSV berhasil diunduh');
     } catch (error) {
       console.error('Error exporting CSV:', error);
       toast.error('Gagal mengekspor ke CSV');
     }
   };
+
+  // Build soal type summary string
+  const soalTypeSummary = Object.entries(ujian.soalByType || {})
+    .map(([tipe, count]) => `${TIPE_FULL_LABELS[tipe] || tipe}: ${count}`)
+    .join(' • ');
 
   return (
     <div className="space-y-6">
@@ -345,10 +388,10 @@ export default function UjianNilaiPage() {
                 try {
                   const date = new Date(ujian.startUjian);
                   if (!isNaN(date.getTime())) {
-                    return format(date, "dd MMMM yyyy", { locale: id });
+                    return format(date, "dd MMMM yyyy", { locale: localeId });
                   }
                   return "-";
-                } catch (error) {
+                } catch {
                   return "-";
                 }
               })() : "-"
@@ -364,8 +407,8 @@ export default function UjianNilaiPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs md:text-sm font-medium text-blue-100">Total Soal</p>
-                <p className="text-2xl md:text-3xl font-bold text-white mt-1 md:mt-2">{ujian.totalSoalPG + ujian.totalSoalEssay}</p>
-                <p className="text-xs text-blue-100 mt-1 hidden md:block">PG: {ujian.totalSoalPG} ({gradeConfig.bobotPG}%) • Essay: {ujian.totalSoalEssay} ({gradeConfig.bobotEssay}%)</p>
+                <p className="text-2xl md:text-3xl font-bold text-white mt-1 md:mt-2">{ujian.totalSoal}</p>
+                <p className="text-xs text-blue-100 mt-1 hidden md:block">{soalTypeSummary || '-'}</p>
               </div>
               <div className="p-2 md:p-3 bg-white/20 rounded-lg hidden md:block">
                 <FileText className="w-6 h-6 text-white" weight="duotone" />
@@ -393,12 +436,22 @@ export default function UjianNilaiPage() {
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs md:text-sm font-medium text-orange-100">Belum</p>
-                <p className="text-2xl md:text-3xl font-bold text-white mt-1 md:mt-2">{stats.belumMengerjakan}</p>
-                <p className="text-xs text-orange-100 mt-1">Siswa</p>
+                <p className="text-xs md:text-sm font-medium text-orange-100">
+                  {stats.perluDinilai > 0 ? 'Perlu Dinilai' : 'Belum'}
+                </p>
+                <p className="text-2xl md:text-3xl font-bold text-white mt-1 md:mt-2">
+                  {stats.perluDinilai > 0 ? stats.perluDinilai : stats.belumMengerjakan}
+                </p>
+                <p className="text-xs text-orange-100 mt-1">
+                  {stats.perluDinilai > 0 ? 'Submission' : 'Siswa'}
+                </p>
               </div>
               <div className="p-2 md:p-3 bg-white/20 rounded-lg hidden md:block">
-                <XCircle className="w-6 h-6 text-white" weight="duotone" />
+                {stats.perluDinilai > 0 ? (
+                  <Warning className="w-6 h-6 text-white" weight="duotone" />
+                ) : (
+                  <XCircle className="w-6 h-6 text-white" weight="duotone" />
+                )}
               </div>
             </div>
           </CardContent>
@@ -410,16 +463,18 @@ export default function UjianNilaiPage() {
               <div>
                 <p className="text-xs md:text-sm font-medium text-purple-100">Rata-rata</p>
                 <p className="text-2xl md:text-3xl font-bold text-white mt-1 md:mt-2">
-                  {submissions.filter((s: any) => s.nilaiTotal).length > 0
+                  {submissions.filter((s: any) => s.nilaiTotal !== null).length > 0
                     ? Math.round(
                         submissions
-                          .filter((s: any) => s.nilaiTotal)
+                          .filter((s: any) => s.nilaiTotal !== null)
                           .reduce((sum: number, s: any) => sum + s.nilaiTotal, 0) /
-                          submissions.filter((s: any) => s.nilaiTotal).length
+                          submissions.filter((s: any) => s.nilaiTotal !== null).length
                       )
                     : '-'}
                 </p>
-                <p className="text-xs text-purple-100 mt-1 hidden md:block">Dari {submissions.filter((s: any) => s.nilaiTotal).length} siswa</p>
+                <p className="text-xs text-purple-100 mt-1 hidden md:block">
+                  Total poin: {ujian.totalPoin} • {submissions.filter((s: any) => s.nilaiTotal !== null).length} siswa
+                </p>
               </div>
               <div className="p-2 md:p-3 bg-white/20 rounded-lg hidden md:block">
                 <ChartBar className="w-6 h-6 text-white" weight="duotone" />
@@ -492,7 +547,7 @@ export default function UjianNilaiPage() {
             </CardHeader>
             <CardContent className="p-6">
               <DataTable
-                columns={createNilaiColumns(handleGrade)}
+                columns={createNilaiColumns(handleGrade, ujian.hasManualSoal)}
                 data={submissions as NilaiSubmission[]}
                 searchKey="siswa"
                 searchPlaceholder="Cari nama siswa..."
@@ -527,71 +582,59 @@ export default function UjianNilaiPage() {
                     <TableRow>
                       <TableHead className="w-12">No</TableHead>
                       <TableHead className="min-w-[150px]">Nama Siswa</TableHead>
-                      {Array.from({ length: ujian.totalSoalPG }, (_, i) => (
-                        <TableHead key={`pg-${i}`} className="text-center w-16">PG{i + 1}</TableHead>
+                      {soalList.map((soal: any) => (
+                        <TableHead key={soal.id} className="text-center min-w-[80px]">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <Badge variant="outline" className="text-[10px] px-1 py-0">
+                              {TIPE_LABELS[soal.tipe] || soal.tipe}
+                            </Badge>
+                            <span className="text-xs">#{soal.nomor}</span>
+                            <span className="text-[10px] text-muted-foreground">{soal.poin}pt</span>
+                          </div>
+                        </TableHead>
                       ))}
-                      {Array.from({ length: ujian.totalSoalEssay }, (_, i) => (
-                        <TableHead key={`essay-${i}`} className="text-center min-w-[200px]">Essay{i + 1}</TableHead>
-                      ))}
+                      <TableHead className="text-center min-w-[80px]">Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
+                    {/* Answer key row */}
                     <TableRow className="bg-yellow-50">
-                      <TableCell className="font-semibold">Kunci</TableCell>
-                      <TableCell className="font-semibold">-</TableCell>
-                      {data.data.soalPG?.map((soal: any) => (
-                        <TableCell key={soal.id} className="text-center font-semibold text-green-700">
-                          {soal.jawabanBenar}
+                      <TableCell className="font-semibold text-xs">Kunci</TableCell>
+                      <TableCell className="font-semibold text-xs">-</TableCell>
+                      {soalList.map((soal: any) => (
+                        <TableCell key={soal.id} className="text-center text-xs font-semibold text-green-700">
+                          {getKunciDisplay(soal)}
                         </TableCell>
                       ))}
-                      {soalEssay.map((soal: any) => (
-                        <TableCell key={soal.id} className="text-xs text-green-700">
-                          {soal.kunciJawaban?.substring(0, 50)}{soal.kunciJawaban?.length > 50 ? '...' : ''}
-                        </TableCell>
-                      ))}
+                      <TableCell className="text-center font-semibold text-xs">{ujian.totalPoin}pt</TableCell>
                     </TableRow>
+                    {/* Student rows */}
                     {submissions.map((s: any, idx: number) => (
                       <TableRow key={s.siswaId}>
-                        <TableCell>{idx + 1}</TableCell>
-                        <TableCell className="font-medium">{s.siswa}</TableCell>
-                        {data.data.soalPG?.map((soal: any, i: number) => {
-                          const jawaban = s.jawabanPG?.find((j: any) => j.soalId === soal.id);
-                          const isCorrect = jawaban?.isCorrect;
+                        <TableCell className="text-xs">{idx + 1}</TableCell>
+                        <TableCell className="font-medium text-sm">{s.siswa}</TableCell>
+                        {soalList.map((soal: any) => {
+                          const jawaban = s.jawaban?.find((j: any) => j.soalId === soal.id);
+                          const display = getJawabanDisplay(soal, jawaban);
                           return (
-                            <TableCell 
-                              key={`pg-${i}`} 
-                              className={`text-center ${
-                                isCorrect ? 'bg-green-50 text-green-700 font-semibold' : 
-                                jawaban ? 'bg-red-50 text-red-700' : ''
+                            <TableCell
+                              key={soal.id}
+                              className={`text-center text-xs ${
+                                display.isCorrect === true ? 'bg-green-50 text-green-700 font-semibold' :
+                                display.isCorrect === false ? 'bg-red-50 text-red-700' : ''
                               }`}
                             >
-                              {jawaban?.jawaban ? stripHtmlTags(jawaban.jawaban) : '-'}
+                              {display.text}
                             </TableCell>
                           );
                         })}
-                        {data.data.soalEssay?.map((soal: any, i: number) => {
-                          const jawaban = s.jawabanEssay?.find((j: any) => j.soalId === soal.id);
-                          return (
-                            <TableCell key={`essay-${i}`} className="text-xs">
-                              {jawaban?.jawaban ? (
-                                jawaban.jawaban.startsWith('http://') || jawaban.jawaban.startsWith('https://') ? (
-                                  <div className="max-w-[200px]">
-                                    <img
-                                      src={jawaban.jawaban}
-                                      alt="Jawaban"
-                                      className="max-w-full h-auto rounded border border-gray-300"
-                                      style={{ maxHeight: '100px' }}
-                                    />
-                                  </div>
-                                ) : (
-                                  <div className="max-w-[200px] truncate" title={stripHtmlTags(jawaban.jawaban)}>
-                                    {stripHtmlTags(jawaban.jawaban)}
-                                  </div>
-                                )
-                              ) : '-'}
-                            </TableCell>
-                          );
-                        })}
+                        <TableCell className="text-center">
+                          {s.nilaiTotal !== null ? (
+                            <span className="font-bold text-blue-600">{s.nilaiTotal}</span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -602,100 +645,168 @@ export default function UjianNilaiPage() {
         </TabsContent>
       </Tabs>
 
+      {/* Grading Dialog */}
       <Dialog open={isGradingOpen} onOpenChange={setIsGradingOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Penilaian Essay - {selectedSubmission?.siswa}</DialogTitle>
+            <DialogTitle>
+              {selectedSubmission?.status === 'perlu_dinilai' ? 'Penilaian' : 'Detail Jawaban'} — {selectedSubmission?.siswa}
+            </DialogTitle>
             <DialogDescription>
-              Berikan nilai dan feedback untuk setiap jawaban essay
+              {essaySoal.length > 0
+                ? `${essaySoal.length} soal essay perlu dinilai manual`
+                : 'Semua soal sudah dinilai otomatis'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6">
-            {essayGrades.map((grade, index) => (
-              <div key={grade.soalId} className="p-4 border rounded-lg space-y-3">
+
+          {/* Auto-graded summary */}
+          {selectedSubmission && (
+            <div className="p-3 bg-gray-50 border rounded-lg space-y-2">
+              <p className="text-sm font-semibold">Ringkasan Nilai</p>
+              <div className="grid grid-cols-3 gap-3 text-center">
                 <div>
-                  <p className="font-semibold text-sm mb-2">Soal {index + 1}:</p>
-                  <p className="text-sm">{stripHtmlTags(grade.pertanyaan)}</p>
+                  <p className="text-xs text-muted-foreground">Otomatis</p>
+                  <p className="text-lg font-bold text-blue-600">{selectedSubmission.nilaiAuto ?? '-'}</p>
                 </div>
-
-                <div className="p-3 bg-green-50 border border-green-200 rounded">
-                  <p className="text-xs font-semibold text-green-700 mb-1">Kunci Jawaban:</p>
-                  <p className="text-sm text-green-900 whitespace-pre-wrap">{stripHtmlTags(grade.kunciJawaban)}</p>
+                {selectedSubmission.nilaiManual !== null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Essay</p>
+                    <p className="text-lg font-bold text-purple-600">{selectedSubmission.nilaiManual ?? '-'}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs text-muted-foreground">Total</p>
+                  <p className="text-lg font-bold text-green-600">{selectedSubmission.nilaiTotal ?? '-'}</p>
                 </div>
+              </div>
+            </div>
+          )}
 
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded">
-                  <p className="text-xs font-semibold text-blue-700 mb-1">Jawaban Siswa:</p>
-                  {grade.jawaban && (grade.jawaban.startsWith('http://') || grade.jawaban.startsWith('https://')) ? (
+          {/* All soal answers overview */}
+          {selectedSubmission && soalList.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold">Jawaban Per Soal</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {soalList.filter(s => s.tipe !== 'ESSAY').map((soal: any) => {
+                  const jawaban = selectedSubmission.jawaban?.find((j: any) => j.soalId === soal.id);
+                  const display = getJawabanDisplay(soal, jawaban);
+                  return (
+                    <div key={soal.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
+                      display.isCorrect === true ? 'bg-green-50 border-green-200' :
+                      display.isCorrect === false ? 'bg-red-50 border-red-200' :
+                      'bg-gray-50 border-gray-200'
+                    }`}>
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 flex-shrink-0">
+                        {TIPE_LABELS[soal.tipe]}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground flex-shrink-0">#{soal.nomor}</span>
+                      <span className="flex-1 truncate font-medium">{display.text}</span>
+                      {display.isCorrect === true && (
+                        <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" weight="fill" />
+                      )}
+                      {display.isCorrect === false && (
+                        <XCircle className="w-4 h-4 text-red-600 flex-shrink-0" weight="fill" />
+                      )}
+                      <span className="text-xs text-muted-foreground flex-shrink-0">{soal.poin}pt</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Essay grading section */}
+          {essayGrades.length > 0 && (
+            <div className="space-y-4">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <Star className="w-4 h-4 text-yellow-500" weight="fill" />
+                Penilaian Essay
+              </p>
+              {essayGrades.map((grade, index) => (
+                <div key={grade.soalId} className="p-4 border rounded-lg space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">Soal #{grade.nomor}</Badge>
+                    <span className="text-xs text-muted-foreground">{grade.poin} poin</span>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1">Pertanyaan:</p>
+                    <MathRenderer content={grade.pertanyaan} className="text-sm" />
+                  </div>
+
+                  {grade.kunciJawaban && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded">
+                      <p className="text-xs font-semibold text-green-700 mb-1">Kunci Jawaban:</p>
+                      <MathRenderer content={typeof grade.kunciJawaban === 'string' ? grade.kunciJawaban : ''} className="text-sm text-green-900" />
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+                    <p className="text-xs font-semibold text-blue-700 mb-1">Jawaban Siswa:</p>
+                    {(() => {
+                      const jawabanText = unwrapJawaban(grade.jawaban);
+                      if (!jawabanText) return <p className="text-sm text-gray-400 italic">(Tidak ada jawaban)</p>;
+                      if (typeof jawabanText === 'string' && (jawabanText.startsWith('http://') || jawabanText.startsWith('https://'))) {
+                        return (
+                          <div className="space-y-2">
+                            <img src={jawabanText} alt="Jawaban" className="max-w-full h-auto rounded-lg border border-blue-300 shadow-sm" style={{ maxHeight: '200px' }} />
+                            <a href={jawabanText} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
+                              Buka di tab baru
+                            </a>
+                          </div>
+                        );
+                      }
+                      return <MathRenderer content={typeof jawabanText === 'string' ? jawabanText : JSON.stringify(jawabanText)} className="text-sm text-blue-900" />;
+                    })()}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <img
-                        src={grade.jawaban}
-                        alt="Jawaban essay siswa"
-                        className="max-w-full h-auto rounded-lg border border-blue-300 shadow-sm"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          const fallback = document.createElement('p');
-                          fallback.className = 'text-sm text-red-600';
-                          fallback.textContent = 'Gagal memuat gambar';
-                          (e.target as HTMLImageElement).parentElement?.appendChild(fallback);
+                      <Label htmlFor={`nilai-${index}`}>Nilai (0-{grade.poin})</Label>
+                      <Input
+                        id={`nilai-${index}`}
+                        type="number"
+                        min="0"
+                        max={grade.poin}
+                        value={grade.nilai}
+                        onChange={(e) => {
+                          const newGrades = [...essayGrades];
+                          const val = parseInt(e.target.value) || 0;
+                          newGrades[index].nilai = Math.min(Math.max(val, 0), grade.poin);
+                          setEssayGrades(newGrades);
                         }}
                       />
-                      <a
-                        href={grade.jawaban}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1"
-                      >
-                        Buka gambar di tab baru
-                      </a>
                     </div>
-                  ) : (
-                    <p className="text-sm text-blue-900 whitespace-pre-wrap">{stripHtmlTags(grade.jawaban) || '(Tidak ada jawaban)'}</p>
-                  )}
-                </div>
+                  </div>
 
-                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor={`nilai-${index}`}>Nilai (0-100)</Label>
-                    <Input
-                      id={`nilai-${index}`}
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={grade.nilai}
+                    <Label htmlFor={`feedback-${index}`}>Feedback</Label>
+                    <Textarea
+                      id={`feedback-${index}`}
+                      placeholder="Berikan feedback untuk siswa..."
+                      value={grade.feedback}
                       onChange={(e) => {
                         const newGrades = [...essayGrades];
-                        newGrades[index].nilai = parseInt(e.target.value) || 0;
+                        newGrades[index].feedback = e.target.value;
                         setEssayGrades(newGrades);
                       }}
+                      rows={3}
                     />
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
 
-                <div className="space-y-2">
-                  <Label htmlFor={`feedback-${index}`}>Feedback</Label>
-                  <Textarea
-                    id={`feedback-${index}`}
-                    placeholder="Berikan feedback untuk siswa..."
-                    value={grade.feedback}
-                    onChange={(e) => {
-                      const newGrades = [...essayGrades];
-                      newGrades[index].feedback = e.target.value;
-                      setEssayGrades(newGrades);
-                    }}
-                    rows={3}
-                  />
-                </div>
-              </div>
-            ))}
-
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setIsGradingOpen(false)}>
-                Batal
-              </Button>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsGradingOpen(false)}>
+              {essayGrades.length > 0 ? 'Batal' : 'Tutup'}
+            </Button>
+            {essayGrades.length > 0 && (
               <Button onClick={handleSubmitGrades}>
                 Simpan Nilai
               </Button>
-            </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

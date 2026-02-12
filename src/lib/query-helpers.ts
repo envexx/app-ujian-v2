@@ -58,12 +58,7 @@ export const includes = {
         nama: true,
       },
     },
-    soalPilihanGanda: {
-      select: {
-        id: true,
-      },
-    },
-    soalEssay: {
+    soal: {
       select: {
         id: true,
       },

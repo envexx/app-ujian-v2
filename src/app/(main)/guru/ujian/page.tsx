@@ -32,7 +32,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Eye, Trash, Clock, CheckCircle, Exam, CheckCircle as CheckCirclePhosphor, File, XCircle, PencilSimple, MagnifyingGlass, DotsThreeVertical, ListChecks, Article, Gear } from "@phosphor-icons/react";
+import { Plus, Eye, CheckCircle, Exam, CheckCircle as CheckCirclePhosphor, File, XCircle, PencilSimple, MagnifyingGlass, ListChecks, Gear } from "@phosphor-icons/react";
 import { Calendar as CalendarIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -337,62 +337,47 @@ export default function UjianGuruPage() {
                       </DropdownMenu>
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-3 sm:space-y-4 pt-0" onClick={(e) => e.stopPropagation()}>
-                    {/* Kelas Tags */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {Array.isArray(u.kelas) ? (
-                        u.kelas.slice(0, 3).map((kelas: string, idx: number) => (
-                          <Badge key={idx} variant="secondary" className="text-[10px] sm:text-xs px-2 py-0.5">
-                            {kelas}
+                  <CardContent className="space-y-3 pt-0" onClick={(e) => e.stopPropagation()}>
+                    {/* Kelas + Soal count row */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+                        {Array.isArray(u.kelas) ? (
+                          u.kelas.slice(0, 3).map((kelas: string, idx: number) => (
+                            <Badge key={idx} variant="secondary" className="text-[10px] sm:text-xs px-2 py-0.5">
+                              {kelas}
+                            </Badge>
+                          ))
+                        ) : (
+                          <Badge variant="secondary" className="text-[10px] sm:text-xs px-2 py-0.5">
+                            {u.kelas}
                           </Badge>
-                        ))
-                      ) : (
-                        <Badge variant="secondary" className="text-[10px] sm:text-xs px-2 py-0.5">
-                          {u.kelas}
-                        </Badge>
-                      )}
-                      {Array.isArray(u.kelas) && u.kelas.length > 3 && (
-                        <Badge variant="outline" className="text-[10px] sm:text-xs px-2 py-0.5">
-                          +{u.kelas.length - 3}
-                        </Badge>
-                      )}
-                    </div>
-
-                    {/* Info Grid */}
-                    <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                      <div className="flex items-center gap-1.5 sm:gap-2 text-muted-foreground min-w-0">
-                        <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm truncate">
-                          Mulai: {format(new Date(u.startUjian), "dd MMM yyyy HH:mm", { locale: id })}
-                        </span>
+                        )}
+                        {Array.isArray(u.kelas) && u.kelas.length > 3 && (
+                          <Badge variant="outline" className="text-[10px] sm:text-xs px-2 py-0.5">
+                            +{u.kelas.length - 3}
+                          </Badge>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1.5 sm:gap-2 text-muted-foreground min-w-0">
-                        <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm truncate">
-                          Selesai: {format(new Date(u.endUjian), "dd MMM yyyy HH:mm", { locale: id })}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 sm:gap-2 text-muted-foreground min-w-0">
-                        <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm truncate">
-                          {Math.round((new Date(u.endUjian).getTime() - new Date(u.startUjian).getTime()) / 60000)} menit
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 sm:gap-2 text-muted-foreground min-w-0">
-                        <ListChecks className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm truncate">
-                          {u.totalSoalPG || 0} PG
-                          {u.totalSoalEssay > 0 && (
-                            <>
-                              <span className="mx-0.5 sm:mx-1">•</span>
-                              {u.totalSoalEssay} Essay
-                            </>
-                          )}
-                        </span>
+                      <div className="flex items-center gap-1 text-muted-foreground flex-shrink-0">
+                        <ListChecks className="w-3.5 h-3.5" />
+                        <span className="text-xs font-medium">{u.totalSoal || 0} soal</span>
                       </div>
                     </div>
 
-                    {/* Status Badge */}
+                    {/* Schedule compact */}
+                    <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+                      <CalendarIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="truncate">
+                        {format(new Date(u.startUjian), "dd MMM yyyy HH:mm", { locale: id })}
+                        {" — "}
+                        {format(new Date(u.endUjian), "dd MMM yyyy HH:mm", { locale: id })}
+                      </span>
+                      <span className="flex-shrink-0 text-muted-foreground/70">
+                        ({Math.round((new Date(u.endUjian).getTime() - new Date(u.startUjian).getTime()) / 60000)}m)
+                      </span>
+                    </div>
+
+                    {/* Status + Actions */}
                     <div className="flex items-center justify-between pt-3 border-t">
                       <Badge 
                         variant={

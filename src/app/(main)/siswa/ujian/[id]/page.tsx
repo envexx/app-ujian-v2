@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogPortal, DialogOverlay } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -27,6 +28,260 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { examQueue, generateChecksum } from "@/lib/exam-queue";
+import { cn } from "@/lib/utils";
+
+// Color palette for matching lines
+const MATCH_COLORS = [
+  { stroke: '#3b82f6', bg: 'rgba(59,130,246,0.08)' },   // blue
+  { stroke: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },   // amber
+  { stroke: '#8b5cf6', bg: 'rgba(139,92,246,0.08)' },   // violet
+  { stroke: '#10b981', bg: 'rgba(16,185,129,0.08)' },   // emerald
+  { stroke: '#ef4444', bg: 'rgba(239,68,68,0.08)' },    // red
+  { stroke: '#ec4899', bg: 'rgba(236,72,153,0.08)' },   // pink
+  { stroke: '#06b6d4', bg: 'rgba(6,182,212,0.08)' },    // cyan
+  { stroke: '#f97316', bg: 'rgba(249,115,22,0.08)' },   // orange
+];
+
+function PencocokanMatchUI({
+  soalId,
+  itemKiri,
+  itemKanan,
+  currentMapping,
+  selectedKiri,
+  onClickKiri,
+  onClickKanan,
+  onReset,
+}: {
+  soalId: string;
+  itemKiri: any[];
+  itemKanan: any[];
+  currentMapping: Record<string, string>;
+  selectedKiri: string | null;
+  onClickKiri: (kiriId: string) => void;
+  onClickKanan: (kananId: string) => void;
+  onReset: () => void;
+}) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const kiriRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+  const kananRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+  const [lines, setLines] = React.useState<{ x1: number; y1: number; x2: number; y2: number; color: string; kiriId: string }[]>([]);
+
+  // Assign a stable color index per kiri item
+  const kiriColorMap = React.useMemo(() => {
+    const map: Record<string, number> = {};
+    itemKiri.forEach((item: any, idx: number) => {
+      map[item.id] = idx % MATCH_COLORS.length;
+    });
+    return map;
+  }, [itemKiri]);
+
+  // Recalculate lines whenever mapping changes
+  React.useEffect(() => {
+    const calcLines = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const containerRect = container.getBoundingClientRect();
+      const newLines: typeof lines = [];
+
+      Object.entries(currentMapping).forEach(([kiriId, kananId]) => {
+        const kiriEl = kiriRefs.current[kiriId];
+        const kananEl = kananRefs.current[kananId as string];
+        if (kiriEl && kananEl) {
+          const kiriRect = kiriEl.getBoundingClientRect();
+          const kananRect = kananEl.getBoundingClientRect();
+          newLines.push({
+            x1: kiriRect.right - containerRect.left,
+            y1: kiriRect.top + kiriRect.height / 2 - containerRect.top,
+            x2: kananRect.left - containerRect.left,
+            y2: kananRect.top + kananRect.height / 2 - containerRect.top,
+            color: MATCH_COLORS[kiriColorMap[kiriId] || 0].stroke,
+            kiriId,
+          });
+        }
+      });
+      setLines(newLines);
+    };
+
+    // Small delay to let DOM settle
+    const timer = setTimeout(calcLines, 50);
+    window.addEventListener('resize', calcLines);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', calcLines);
+    };
+  }, [currentMapping, kiriColorMap]);
+
+  // Find which kanan is connected to which kiri
+  const kananToKiri: Record<string, string> = {};
+  Object.entries(currentMapping).forEach(([kId, knId]) => {
+    kananToKiri[knId as string] = kId;
+  });
+
+  return (
+    <>
+      <p className="text-xs text-muted-foreground mb-3">
+        Klik item di kolom kiri, lalu klik item di kolom kanan untuk mencocokkan.
+      </p>
+      <div ref={containerRef} className="relative">
+        {/* SVG overlay for connecting lines */}
+        {lines.length > 0 && (
+          <svg
+            className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{ zIndex: 1 }}
+          >
+            <defs>
+              {lines.map((line, i) => (
+                <linearGradient key={`grad-${i}`} id={`matchGrad-${soalId}-${i}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor={line.color} stopOpacity="0.9" />
+                  <stop offset="50%" stopColor={line.color} stopOpacity="0.6" />
+                  <stop offset="100%" stopColor={line.color} stopOpacity="0.9" />
+                </linearGradient>
+              ))}
+            </defs>
+            {lines.map((line, i) => {
+              const dx = line.x2 - line.x1;
+              const cp1x = line.x1 + dx * 0.4;
+              const cp2x = line.x1 + dx * 0.6;
+              return (
+                <g key={i}>
+                  {/* Glow effect */}
+                  <path
+                    d={`M ${line.x1} ${line.y1} C ${cp1x} ${line.y1}, ${cp2x} ${line.y2}, ${line.x2} ${line.y2}`}
+                    fill="none"
+                    stroke={line.color}
+                    strokeWidth="6"
+                    strokeOpacity="0.15"
+                    strokeLinecap="round"
+                  />
+                  {/* Main line */}
+                  <path
+                    d={`M ${line.x1} ${line.y1} C ${cp1x} ${line.y1}, ${cp2x} ${line.y2}, ${line.x2} ${line.y2}`}
+                    fill="none"
+                    stroke={`url(#matchGrad-${soalId}-${i})`}
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeDasharray="none"
+                  />
+                  {/* Start dot */}
+                  <circle cx={line.x1} cy={line.y1} r="4" fill={line.color} fillOpacity="0.8" />
+                  {/* End dot */}
+                  <circle cx={line.x2} cy={line.y2} r="4" fill={line.color} fillOpacity="0.8" />
+                </g>
+              );
+            })}
+          </svg>
+        )}
+
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-0">
+          {/* Left column */}
+          <div className="space-y-2 pr-4">
+            <p className="text-xs font-semibold text-blue-700 mb-2">Pernyataan</p>
+            {itemKiri.map((item: any, idx: number) => {
+              const isSelected = selectedKiri === item.id;
+              const isConnected = !!currentMapping[item.id];
+              const colorIdx = kiriColorMap[item.id] || 0;
+              return (
+                <button
+                  key={item.id}
+                  ref={(el) => { kiriRefs.current[item.id] = el; }}
+                  onClick={() => onClickKiri(item.id)}
+                  className={cn(
+                    "w-full text-left p-3 rounded-lg border-2 text-sm transition-all relative z-[2]",
+                    isSelected
+                      ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200"
+                      : isConnected
+                        ? "bg-white"
+                        : "border-gray-200 hover:border-blue-300 hover:bg-blue-50/50"
+                  )}
+                  style={isConnected && !isSelected ? {
+                    borderColor: MATCH_COLORS[colorIdx].stroke,
+                    backgroundColor: MATCH_COLORS[colorIdx].bg,
+                  } : undefined}
+                >
+                  <span className="font-bold text-blue-600 mr-2">{idx + 1}.</span>
+                  <MathRenderer content={item.text} className="inline text-sm" />
+                  {isConnected && (
+                    <span
+                      className="ml-2 text-xs font-medium"
+                      style={{ color: MATCH_COLORS[colorIdx].stroke }}
+                    >
+                      → {String.fromCharCode(65 + itemKanan.findIndex((k: any) => k.id === currentMapping[item.id]))}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Center spacer for lines */}
+          <div className="w-12" />
+
+          {/* Right column */}
+          <div className="space-y-2 pl-4">
+            <p className="text-xs font-semibold text-orange-700 mb-2">Pasangan</p>
+            {itemKanan.map((item: any, idx: number) => {
+              const connectedKiriId = kananToKiri[item.id];
+              const colorIdx = connectedKiriId ? (kiriColorMap[connectedKiriId] || 0) : 0;
+              return (
+                <button
+                  key={item.id}
+                  ref={(el) => { kananRefs.current[item.id] = el; }}
+                  onClick={() => {
+                    if (selectedKiri) onClickKanan(item.id);
+                  }}
+                  disabled={!selectedKiri}
+                  className={cn(
+                    "w-full text-left p-3 rounded-lg border-2 text-sm transition-all relative z-[2]",
+                    connectedKiriId
+                      ? "bg-white"
+                      : selectedKiri
+                        ? "border-orange-300 hover:border-orange-500 hover:bg-orange-50 cursor-pointer"
+                        : "border-gray-200 opacity-70"
+                  )}
+                  style={connectedKiriId ? {
+                    borderColor: MATCH_COLORS[colorIdx].stroke,
+                    backgroundColor: MATCH_COLORS[colorIdx].bg,
+                  } : undefined}
+                >
+                  <span className="font-bold text-orange-600 mr-2">{String.fromCharCode(65 + idx)}.</span>
+                  <MathRenderer content={item.text} className="inline text-sm" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Reset button */}
+      {Object.keys(currentMapping).length > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={onReset}
+        >
+          Reset Semua Koneksi
+        </Button>
+      )}
+    </>
+  );
+}
+
+// Soal type labels
+const TIPE_LABELS: Record<string, string> = {
+  PILIHAN_GANDA: 'Pilihan Ganda',
+  ESSAY: 'Essay',
+  ISIAN_SINGKAT: 'Isian Singkat',
+  PENCOCOKAN: 'Pencocokan',
+  BENAR_SALAH: 'Benar/Salah',
+};
+
+// Determine save type for exam queue
+function getSaveType(tipe: string): 'multiple_choice' | 'essay' {
+  // Essay uses debounced save, everything else is instant
+  if (tipe === 'ESSAY') return 'essay';
+  return 'multiple_choice';
+}
 
 export default function SiswaUjianDetailPage() {
   const router = useRouter();
@@ -40,20 +295,22 @@ export default function SiswaUjianDetailPage() {
   const [token, setToken] = useState("");
   const [isValidatingToken, setIsValidatingToken] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(0); // Waktu tersisa dalam detik (dari server)
+  const [timeRemaining, setTimeRemaining] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   
   const [ujianData, setUjianData] = useState<any>(null);
-  const [answers, setAnswers] = useState<{ [key: string]: string }>({});
-  const [essayImages, setEssayImages] = useState<{ [key: string]: string }>({}); // Store base64 images for essay
-  const [essayInputMode, setEssayInputMode] = useState<{ [key: string]: 'text' | 'image' }>({}); // Input mode per question
-  const [showCameraModal, setShowCameraModal] = useState(false); // Modal webcam
-  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null); // Preview foto yang diambil
-  const [cameraQuestionId, setCameraQuestionId] = useState<string | null>(null); // ID soal untuk foto
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false); // Status upload
-  const [cameraLoading, setCameraLoading] = useState(true); // Loading state untuk webcam
-  const [cameraError, setCameraError] = useState<string | null>(null); // Error state untuk webcam
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null); // WebRTC stream
+  const [answers, setAnswers] = useState<{ [key: string]: any }>({});
+  const [essayImages, setEssayImages] = useState<{ [key: string]: string }>({});
+  const [essayInputMode, setEssayInputMode] = useState<{ [key: string]: 'text' | 'image' }>({});
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [cameraQuestionId, setCameraQuestionId] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(true);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  // Pencocokan drag state
+  const [pencocokanSelections, setPencocokanSelections] = useState<{ [soalId: string]: { selectedKiri: string | null } }>({});
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -78,7 +335,6 @@ export default function SiswaUjianDetailPage() {
       if (stored) {
         const parsed = JSON.parse(stored);
         setAnswers(parsed);
-        // Set all as saved initially
         const status: { [key: string]: 'saved' } = {};
         Object.keys(parsed).forEach((key) => {
           status[key] = 'saved';
@@ -86,18 +342,14 @@ export default function SiswaUjianDetailPage() {
         setSaveStatus(status);
       }
 
-      // Load images
       const storedImages = localStorage.getItem(getImagesStorageKey());
       if (storedImages) {
-        const parsedImages = JSON.parse(storedImages);
-        setEssayImages(parsedImages);
+        setEssayImages(JSON.parse(storedImages));
       }
 
-      // Load input modes
       const storedModes = localStorage.getItem(getInputModeStorageKey());
       if (storedModes) {
-        const parsedModes = JSON.parse(storedModes) as { [key: string]: 'text' | 'image' };
-        setEssayInputMode(parsedModes);
+        setEssayInputMode(JSON.parse(storedModes) as { [key: string]: 'text' | 'image' });
       }
     } catch (error) {
       console.error('Error loading from localStorage:', error);
@@ -105,13 +357,11 @@ export default function SiswaUjianDetailPage() {
   };
 
   // Save to localStorage
-  const saveToLocalStorage = (questionId: string, answer: string) => {
+  const saveToLocalStorage = (questionId: string, answer: any) => {
     if (!params.id) return;
     try {
       const current = { ...answers, [questionId]: answer };
       localStorage.setItem(getStorageKey(), JSON.stringify(current));
-      
-      // Also save images and modes
       localStorage.setItem(getImagesStorageKey(), JSON.stringify(essayImages));
       localStorage.setItem(getInputModeStorageKey(), JSON.stringify(essayInputMode));
     } catch (error) {
@@ -119,22 +369,15 @@ export default function SiswaUjianDetailPage() {
     }
   };
 
-  // Fetch waktu tersisa dari server (hanya sekali saat mulai atau reload)
+  // Fetch waktu tersisa dari server
   const fetchTimeRemaining = React.useCallback(async () => {
     if (!params.id) return;
-    
     try {
       const response = await fetch(`/api/siswa/ujian/${params.id}/time-remaining`);
       const result = await response.json();
-      
       if (result.success) {
         const { timeRemaining, isExpired } = result.data;
-        setTimeRemaining(timeRemaining);
-        
-        // Jika waktu habis, trigger auto-submit check
-        if (isExpired) {
-          setTimeRemaining(0);
-        }
+        setTimeRemaining(isExpired ? 0 : timeRemaining);
       }
     } catch (error) {
       console.error('Error fetching time remaining:', error);
@@ -143,10 +386,7 @@ export default function SiswaUjianDetailPage() {
 
   useEffect(() => {
     if (params.id) {
-      // Initialize exam queue
       examQueue.setExamId(params.id as string);
-      
-      // Reset semua state saat reload
       setIsStarted(false);
       setTimeRemaining(0);
       hasAutoSubmittedRef.current = false;
@@ -156,30 +396,20 @@ export default function SiswaUjianDetailPage() {
       loadAnswersFromStorage();
       
       // Recovery failed answers from localStorage
-      const recoverFailedAnswers = () => {
-        try {
-          const key = `failedAnswers_${params.id}`;
-          const failed = localStorage.getItem(key);
-          
-          if (failed) {
-            const failedAnswers = JSON.parse(failed);
-            console.log(`🔄 Recovering ${failedAnswers.length} failed answers from localStorage`);
-            
-            // Re-queue all failed answers
-            failedAnswers.forEach((ans: any) => {
-              examQueue.addAnswer(ans.questionId, ans.questionType, ans.answer);
-            });
-            
-            // Clear localStorage after re-queuing
-            localStorage.removeItem(key);
-            toast.info(`Memulihkan ${failedAnswers.length} jawaban yang gagal tersimpan`);
-          }
-        } catch (error) {
-          console.error('Error recovering failed answers:', error);
+      try {
+        const key = `failedAnswers_${params.id}`;
+        const failed = localStorage.getItem(key);
+        if (failed) {
+          const failedAnswers = JSON.parse(failed);
+          failedAnswers.forEach((ans: any) => {
+            examQueue.addAnswer(ans.questionId, ans.questionType, ans.answer);
+          });
+          localStorage.removeItem(key);
+          toast.info(`Memulihkan ${failedAnswers.length} jawaban yang gagal tersimpan`);
         }
-      };
-      
-      recoverFailedAnswers();
+      } catch (error) {
+        console.error('Error recovering failed answers:', error);
+      }
       
       setTimeout(() => {
         isInitialLoadRef.current = false;
@@ -190,12 +420,9 @@ export default function SiswaUjianDetailPage() {
   // Monitor queue status
   useEffect(() => {
     if (!isStarted) return;
-
     const interval = setInterval(() => {
-      const status = examQueue.getQueueStatus();
-      setQueueStatus(status);
+      setQueueStatus(examQueue.getQueueStatus());
     }, 500);
-
     return () => clearInterval(interval);
   }, [isStarted]);
 
@@ -210,39 +437,24 @@ export default function SiswaUjianDetailPage() {
 
   // Ensure currentQuestion is within valid range
   useEffect(() => {
-    if (!ujianData) return;
-    const { soalPG, soalEssay } = ujianData;
-    const allQuestions = [...(soalPG || []), ...(soalEssay || [])];
-    if (allQuestions.length > 0 && currentQuestion >= allQuestions.length) {
-      setCurrentQuestion(Math.max(0, allQuestions.length - 1));
+    if (!ujianData?.soal) return;
+    const soal = ujianData.soal || [];
+    if (soal.length > 0 && currentQuestion >= soal.length) {
+      setCurrentQuestion(Math.max(0, soal.length - 1));
     }
   }, [ujianData, currentQuestion]);
 
   // Handle auto-submit (dipanggil saat waktu habis)
   const handleAutoSubmit = React.useCallback(async () => {
-    // GUARD: Jangan submit jika masih initial load
-    if (isInitialLoadRef.current) {
-      console.log('Auto-submit blocked: masih initial load');
-      return;
-    }
-
-    // GUARD: Jangan submit jika sudah pernah submit
-    if (isSubmitting || hasAutoSubmittedRef.current) {
-      return;
-    }
-
-    // GUARD: Cek apakah submission sudah di-submit
-    if (ujianData?.submission?.submittedAt) {
-      console.log('Auto-submit blocked: submission sudah di-submit');
-      return;
-    }
+    if (isInitialLoadRef.current) return;
+    if (isSubmitting || hasAutoSubmittedRef.current) return;
+    if (ujianData?.submission?.submittedAt) return;
     
     setIsSubmitting(true);
     hasAutoSubmittedRef.current = true;
     
     try {
       const storageKey = getStorageKey();
-      
       const response = await fetch(`/api/siswa/ujian/${params.id}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -252,29 +464,18 @@ export default function SiswaUjianDetailPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        // Clear ALL localStorage related to this exam (answers, shuffle order, images, input mode)
         localStorage.removeItem(storageKey);
         localStorage.removeItem(`ujian_${params.id}_shuffled_order`);
         localStorage.removeItem(getImagesStorageKey());
         localStorage.removeItem(getInputModeStorageKey());
-        
-        // Clear all timers
-        Object.values(saveTimersRef.current).forEach((timer) => {
-          if (timer) clearTimeout(timer);
-        });
+        Object.values(saveTimersRef.current).forEach((timer) => { if (timer) clearTimeout(timer); });
         
         toast.success("Waktu ujian habis. Ujian berhasil dikumpulkan!");
-        // Redirect ke halaman hasil setelah submit berhasil
-        setTimeout(() => {
-          router.push(`/siswa/ujian/${params.id}/hasil`);
-        }, 500);
+        setTimeout(() => { router.push(`/siswa/ujian/${params.id}/hasil`); }, 500);
       } else {
-        // Jika error karena sudah di-submit, redirect ke hasil
         if (result.error?.includes('sudah') || result.error?.includes('submitted') || result.error?.includes('dikumpulkan')) {
           toast.info("Ujian sudah dikumpulkan sebelumnya");
-          setTimeout(() => {
-            router.push(`/siswa/ujian/${params.id}/hasil`);
-          }, 500);
+          setTimeout(() => { router.push(`/siswa/ujian/${params.id}/hasil`); }, 500);
           return;
         }
         toast.error(result.error || "Gagal mengumpulkan ujian");
@@ -289,58 +490,23 @@ export default function SiswaUjianDetailPage() {
     }
   }, [params.id, answers, isSubmitting, ujianData]);
 
-  // Countdown timer di frontend (setiap detik)
-  // Timer hanya dibuat sekali saat isStarted = true, tidak re-create setiap detik
+  // Countdown timer
   useEffect(() => {
-    if (!isStarted) return;
-
-    // Jangan start timer jika waktu sudah habis (mungkin dari reload)
-    // Biarkan auto-submit check yang handle ini
-    if (timeRemaining <= 0) {
-      return;
-    }
-
+    if (!isStarted || timeRemaining <= 0) return;
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
-        if (prev <= 0) {
-          clearInterval(timer);
-          return 0; // Jangan minus
-        }
+        if (prev <= 0) { clearInterval(timer); return 0; }
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timer);
-  }, [isStarted, timeRemaining]); // Depend pada timeRemaining untuk handle reload dengan waktu habis
+  }, [isStarted, timeRemaining]);
 
-  // Auto-submit check: jika waktu habis DAN minimal ada 1 soal terjawab
+  // Auto-submit check
   useEffect(() => {
-    // GUARD: Jangan auto-submit saat initial load/reload
-    if (isInitialLoadRef.current) {
-      console.log('Auto-submit blocked: masih initial load');
-      return;
-    }
-
-    // GUARD: Jangan auto-submit jika ujian belum dimulai
-    if (!isStarted) {
-      return;
-    }
-
-    // GUARD: Jangan auto-submit jika waktu masih ada
-    if (timeRemaining > 0) {
-      return;
-    }
-
-    // GUARD: Jangan auto-submit jika sudah pernah submit
-    if (hasAutoSubmittedRef.current || isSubmitting) {
-      return;
-    }
-
-    // GUARD: Cek apakah submission sudah di-submit (dari ujianData)
-    if (ujianData?.submission?.submittedAt) {
-      console.log('Auto-submit blocked: submission sudah di-submit');
-      return;
-    }
+    if (isInitialLoadRef.current || !isStarted || timeRemaining > 0) return;
+    if (hasAutoSubmittedRef.current || isSubmitting) return;
+    if (ujianData?.submission?.submittedAt) return;
 
     const answeredCount = Object.keys(answers).filter(key => {
       const answer = answers[key];
@@ -348,8 +514,6 @@ export default function SiswaUjianDetailPage() {
     }).length;
 
     if (answeredCount > 0) {
-      console.log('Time expired, auto-submitting with', answeredCount, 'answered questions');
-      // Direct submit tanpa modal konfirmasi untuk auto-submit
       handleAutoSubmit();
     }
   }, [timeRemaining, isStarted, answers, isSubmitting, handleAutoSubmit, ujianData]);
@@ -372,185 +536,79 @@ export default function SiswaUjianDetailPage() {
       if (result.success) {
         let processedData = { ...result.data };
         
-        // Debug: Log data yang diterima
-        console.log('Data ujian diterima:', {
-          hasUjian: !!processedData.ujian,
-          soalPGCount: processedData.soalPG?.length || 0,
-          soalEssayCount: processedData.soalEssay?.length || 0,
-          soalPG: processedData.soalPG,
-          soalEssay: processedData.soalEssay,
-        });
-        
-        // Guard: Pastikan soalPG dan soalEssay adalah array
-        if (!Array.isArray(processedData.soalPG)) {
-          console.warn('soalPG is not an array:', processedData.soalPG);
-          processedData.soalPG = [];
-        }
-        if (!Array.isArray(processedData.soalEssay)) {
-          console.warn('soalEssay is not an array:', processedData.soalEssay);
-          processedData.soalEssay = [];
+        // Guard: Pastikan soal adalah array
+        if (!Array.isArray(processedData.soal)) {
+          console.warn('soal is not an array:', processedData.soal);
+          processedData.soal = [];
         }
         
-        // Check if shuffleQuestions is enabled
-        if (result.data.ujian?.shuffleQuestions) {
-          // Check if shuffled order already exists in localStorage (to maintain consistency on reload)
+        // Shuffle if enabled
+        if (result.data.ujian?.shuffleQuestions && processedData.soal.length > 0) {
           const shuffleKey = `ujian_${params.id}_shuffled_order`;
           const storedShuffle = localStorage.getItem(shuffleKey);
           
           if (storedShuffle) {
-            // Use stored shuffle order
             try {
-              const { soalPGOrder, soalEssayOrder } = JSON.parse(storedShuffle);
-              
-              // Reorder soal PG based on stored order
-              if (processedData.soalPG && processedData.soalPG.length > 0 && soalPGOrder && Array.isArray(soalPGOrder)) {
-                const soalPGMap = new Map(processedData.soalPG.map((s: any) => [s.id, s]));
-                const reorderedPG = soalPGOrder
-                  .map((id: string) => soalPGMap.get(id))
+              const { soalOrder } = JSON.parse(storedShuffle);
+              if (Array.isArray(soalOrder)) {
+                const soalMap = new Map(processedData.soal.map((s: any) => [s.id, s]));
+                const reordered = soalOrder
+                  .map((sid: string) => soalMap.get(sid))
                   .filter((s: any) => s !== undefined);
                 
-                // Only use reordered if we got all questions, otherwise use original
-                if (reorderedPG.length === processedData.soalPG.length) {
-                  processedData.soalPG = reorderedPG.map((soal: any, idx: number) => ({
+                if (reordered.length === processedData.soal.length) {
+                  processedData.soal = reordered.map((soal: any, idx: number) => ({
                     ...soal,
                     nomor: idx + 1,
                   }));
-                } else {
-                  console.warn('Stored PG order tidak match, menggunakan urutan asli');
                 }
               }
-              
-              // Reorder soal Essay based on stored order
-              if (processedData.soalEssay && processedData.soalEssay.length > 0 && soalEssayOrder && Array.isArray(soalEssayOrder)) {
-                const soalEssayMap = new Map(processedData.soalEssay.map((s: any) => [s.id, s]));
-                const reorderedEssay = soalEssayOrder
-                  .map((id: string) => soalEssayMap.get(id))
-                  .filter((s: any) => s !== undefined);
-                
-                // Only use reordered if we got all questions, otherwise use original
-                if (reorderedEssay.length === processedData.soalEssay.length) {
-                  processedData.soalEssay = reorderedEssay.map((soal: any, idx: number) => ({
-                    ...soal,
-                    nomor: idx + 1,
-                  }));
-                } else {
-                  console.warn('Stored Essay order tidak match, menggunakan urutan asli');
-                }
-              }
-              
-              console.log('Menggunakan urutan soal yang sudah di-shuffle sebelumnya');
             } catch (error) {
               console.error('Error parsing stored shuffle order:', error);
-              // Fall through to shuffle again
             }
-          }
-          
-          // If no stored order, shuffle and save it
-          if (!storedShuffle) {
-            // Shuffle soal PG if exists
-            if (processedData.soalPG && processedData.soalPG.length > 0) {
-              processedData.soalPG = shuffleArray(processedData.soalPG);
-              // Update nomor setelah shuffle
-              processedData.soalPG = processedData.soalPG.map((soal: any, idx: number) => ({
-                ...soal,
-                nomor: idx + 1,
-              }));
-            }
-            
-            // Shuffle soal Essay if exists
-            if (processedData.soalEssay && processedData.soalEssay.length > 0) {
-              processedData.soalEssay = shuffleArray(processedData.soalEssay);
-              // Update nomor setelah shuffle
-              processedData.soalEssay = processedData.soalEssay.map((soal: any, idx: number) => ({
-                ...soal,
-                nomor: idx + 1,
-              }));
-            }
-            
-            // Save shuffled order to localStorage
-            const shuffleOrder = {
-              soalPGOrder: processedData.soalPG?.map((s: any) => s.id) || [],
-              soalEssayOrder: processedData.soalEssay?.map((s: any) => s.id) || [],
-            };
-            localStorage.setItem(shuffleKey, JSON.stringify(shuffleOrder));
-            
-            console.log('Soal diacak karena shuffleQuestions aktif');
+          } else {
+            processedData.soal = shuffleArray(processedData.soal).map((soal: any, idx: number) => ({
+              ...soal,
+              nomor: idx + 1,
+            }));
+            localStorage.setItem(shuffleKey, JSON.stringify({
+              soalOrder: processedData.soal.map((s: any) => s.id),
+            }));
           }
         }
         
-        // Final check: Pastikan data valid sebelum di-set
-        console.log('Data sebelum di-set ke state:', {
-          hasUjian: !!processedData.ujian,
-          soalPGCount: processedData.soalPG?.length || 0,
-          soalEssayCount: processedData.soalEssay?.length || 0,
-          soalPGIsArray: Array.isArray(processedData.soalPG),
-          soalEssayIsArray: Array.isArray(processedData.soalEssay),
-          rawSoalPG: processedData.soalPG,
-          rawSoalEssay: processedData.soalEssay,
-        });
-        
-        // Ensure arrays are always arrays and not null/undefined
-        if (!Array.isArray(processedData.soalPG)) {
-          console.warn('soalPG is not array, converting:', processedData.soalPG);
-          processedData.soalPG = [];
-        }
-        if (!Array.isArray(processedData.soalEssay)) {
-          console.warn('soalEssay is not array, converting:', processedData.soalEssay);
-          processedData.soalEssay = [];
-        }
-        
-        // Final validation: Pastikan minimal ada 1 soal
-        const totalSoal = processedData.soalPG.length + processedData.soalEssay.length;
-        if (totalSoal === 0) {
-          console.error('ERROR: Tidak ada soal setelah processing!', {
-            originalSoalPG: result.data.soalPG,
-            originalSoalEssay: result.data.soalEssay,
-            processedSoalPG: processedData.soalPG,
-            processedSoalEssay: processedData.soalEssay,
-          });
+        // Final validation
+        if (processedData.soal.length === 0) {
           toast.error('Tidak ada soal dalam ujian ini. Silakan hubungi administrator.');
           return;
         }
         
-        console.log('Data valid, setting to state. Total soal:', totalSoal);
         setUjianData(processedData);
         
         // Check if already submitted
-        if (result.data.submission && result.data.submission.submittedAt) {
-          // Clear ALL localStorage related to this exam since it's already submitted
+        if (result.data.submission?.submittedAt) {
           localStorage.removeItem(getStorageKey());
           localStorage.removeItem(`ujian_${params.id}_shuffled_order`);
           localStorage.removeItem(getImagesStorageKey());
           localStorage.removeItem(getInputModeStorageKey());
-          
           toast.info("Anda sudah mengerjakan ujian ini");
-          // Redirect ke halaman hasil jika sudah di-submit
-          setTimeout(() => {
-            router.push(`/siswa/ujian/${params.id}/hasil`);
-          }, 500);
+          setTimeout(() => { router.push(`/siswa/ujian/${params.id}/hasil`); }, 500);
           return;
         }
         
         // Check if can start
         if (!result.data.canStart) {
-          const accessMessage = result.data.accessMessage || "Ujian belum dapat dimulai";
-          toast.error(accessMessage);
+          toast.error(result.data.accessMessage || "Ujian belum dapat dimulai");
           router.push('/siswa/ujian');
           return;
         }
         
-        // Set waktu tersisa dari response (saat load pertama kali atau reload)
+        // Set waktu tersisa
         if (result.data.timeRemaining !== undefined) {
           setTimeRemaining(result.data.timeRemaining);
-          
-          // Jika ada submission (sudah mulai), set isStarted
-          if (result.data.submission && result.data.submission.startedAt && !result.data.submission.submittedAt) {
+          if (result.data.submission?.startedAt && !result.data.submission?.submittedAt) {
             setIsStarted(true);
-            // Reset flag untuk memungkinkan auto-submit jika waktu benar-benar habis
-            // Tapi tetap beri delay untuk mencegah auto-submit saat reload
-            setTimeout(() => {
-              isInitialLoadRef.current = false;
-            }, 3000); // 3 detik delay setelah reload
+            setTimeout(() => { isInitialLoadRef.current = false; }, 3000);
           }
         }
       } else {
@@ -606,16 +664,11 @@ export default function SiswaUjianDetailPage() {
   };
 
   // Queue-based save (replaces old auto-save)
-  const saveAnswerToQueue = (questionId: string, questionType: 'multiple_choice' | 'essay', answer: string) => {
-    // Add to queue
+  const saveAnswerToQueue = (questionId: string, questionType: 'multiple_choice' | 'essay', answer: any) => {
     examQueue.addAnswer(questionId, questionType, answer);
-    
-    // Update UI status
     setSaveStatus((prev) => ({ ...prev, [questionId]: 'saving' }));
     
-    // Check status after a delay
     setTimeout(() => {
-      const status = examQueue.getQueueStatus();
       const failedAnswers = examQueue.getFailedAnswers();
       const isFailed = failedAnswers.some(a => a.questionId === questionId);
       
@@ -787,7 +840,7 @@ export default function SiswaUjianDetailPage() {
       setEssayInputMode(newModes);
       
       // Save image URL as answer (not base64)
-      handleAnswerChange(questionId, imageUrl, 'essay');
+      handleAnswerChange(questionId, imageUrl, 'ESSAY');
       
       // Save to localStorage
       try {
@@ -808,31 +861,25 @@ export default function SiswaUjianDetailPage() {
     }
   };
 
-  const handleAnswerChange = (questionId: string, answer: string, questionType: 'multiple_choice' | 'essay') => {
-    // Update state
+  const handleAnswerChange = (questionId: string, answer: any, soalTipe: string) => {
     const newAnswers = { ...answers, [questionId]: answer };
     setAnswers(newAnswers);
-
-    // Save to localStorage immediately
     saveToLocalStorage(questionId, answer);
 
-    if (questionType === 'multiple_choice') {
-      // Instant save for PG via queue
+    const saveType = getSaveType(soalTipe);
+
+    if (saveType === 'multiple_choice') {
+      // Instant save for PG, Isian Singkat, Benar/Salah, Pencocokan
       saveAnswerToQueue(questionId, 'multiple_choice', answer);
     } else {
       // Debounced save for Essay
       setSaveStatus((prev) => ({ ...prev, [questionId]: 'typing' }));
-
-      // Clear existing timer
       if (saveTimersRef.current[questionId]) {
         clearTimeout(saveTimersRef.current[questionId]);
       }
-
-      // Set new timer (2 seconds debounce)
       const timer = setTimeout(() => {
         saveAnswerToQueue(questionId, 'essay', answer);
       }, 2000);
-
       saveTimersRef.current[questionId] = timer;
     }
   };
@@ -840,8 +887,7 @@ export default function SiswaUjianDetailPage() {
   const validateAllAnswers = () => {
     if (!ujianData) return { valid: false, message: "" };
     
-    const { soalPG, soalEssay } = ujianData;
-    const allQuestions = [...(soalPG || []), ...(soalEssay || [])];
+    const allQuestions = ujianData.soal || [];
     const unansweredQuestions: number[] = [];
 
     allQuestions.forEach((q: any, idx: number) => {
@@ -1004,7 +1050,7 @@ export default function SiswaUjianDetailPage() {
     return <LoadingSpinner />;
   }
 
-  if (!ujianData) {
+  if (!ujianData || !ujianData.ujian) {
     return (
       <div className="flex items-center justify-center h-96">
         <p className="text-red-600">Ujian tidak ditemukan</p>
@@ -1012,72 +1058,21 @@ export default function SiswaUjianDetailPage() {
     );
   }
 
-  // Guard: Pastikan ujianData memiliki struktur yang benar
-  if (!ujianData || !ujianData.ujian) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <p className="text-red-600">Data ujian tidak valid</p>
-        </div>
-      </div>
-    );
-  }
+  const { ujian, soal: allQuestions, examEndTime } = ujianData;
 
-  const { ujian, soalPG, soalEssay, examEndTime } = ujianData;
-  
-  // Guard: Pastikan ujian ada
-  if (!ujian) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <p className="text-red-600">Data ujian tidak valid</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Guard: Pastikan soalPG dan soalEssay adalah array
-  const safeSoalPG = Array.isArray(soalPG) ? soalPG : [];
-  const safeSoalEssay = Array.isArray(soalEssay) ? soalEssay : [];
-  const allQuestions = [...safeSoalPG, ...safeSoalEssay];
-  
-  // Debug: Log untuk troubleshooting
-  console.log('Rendering check:', {
-    soalPGType: typeof soalPG,
-    soalPGIsArray: Array.isArray(soalPG),
-    soalPGLength: soalPG?.length,
-    safeSoalPGLength: safeSoalPG.length,
-    soalEssayType: typeof soalEssay,
-    soalEssayIsArray: Array.isArray(soalEssay),
-    soalEssayLength: soalEssay?.length,
-    safeSoalEssayLength: safeSoalEssay.length,
-    allQuestionsLength: allQuestions.length,
-    ujianDataKeys: Object.keys(ujianData || {}),
-  });
-  
-  // Guard: Pastikan ada soal
-  if (allQuestions.length === 0) {
+  if (!allQuestions || allQuestions.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center space-y-4">
           <p className="text-red-600 font-bold">Tidak ada soal dalam ujian ini</p>
-          <div className="text-sm text-muted-foreground space-y-2">
-            <p>Debug Info:</p>
-            <p>soalPG: {soalPG ? `${Array.isArray(soalPG) ? soalPG.length : 'not array'}` : 'null/undefined'}</p>
-            <p>soalEssay: {soalEssay ? `${Array.isArray(soalEssay) ? soalEssay.length : 'not array'}` : 'null/undefined'}</p>
-            <p>ujianData keys: {ujianData ? Object.keys(ujianData).join(', ') : 'null'}</p>
-          </div>
         </div>
       </div>
     );
   }
 
-  // Guard: Pastikan currentQuestion dalam range
   const safeCurrentQuestion = Math.max(0, Math.min(currentQuestion, allQuestions.length - 1));
   const currentQ = allQuestions[safeCurrentQuestion];
-  const isPG = safeCurrentQuestion < safeSoalPG.length;
 
-  // Guard: Jika currentQ tidak ada atau tidak memiliki pertanyaan, tampilkan error
   if (!currentQ || !currentQ.pertanyaan) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1088,12 +1083,18 @@ export default function SiswaUjianDetailPage() {
     );
   }
 
-  // Get waktu mulai dan akhir ujian dari database
   const startTime = new Date(ujian.startUjian);
   const endTime = new Date(ujian.endUjian);
-  
-  // Calculate duration in minutes
   const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+
+  // Soal type breakdown for info display
+  const soalByType: Record<string, number> = {};
+  allQuestions.forEach((q: any) => {
+    soalByType[q.tipe] = (soalByType[q.tipe] || 0) + 1;
+  });
+  const soalTypeSummary = Object.entries(soalByType)
+    .map(([tipe, count]) => `${count} ${TIPE_LABELS[tipe] || tipe}`)
+    .join(' • ');
 
   if (!isStarted) {
     return (
@@ -1140,7 +1141,7 @@ export default function SiswaUjianDetailPage() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Jenis Soal</p>
-                    <p className="font-semibold">{soalPG.length} PG • {soalEssay.length} Essay</p>
+                    <p className="font-semibold">{soalTypeSummary}</p>
                   </div>
                 </div>
               </div>
@@ -1200,10 +1201,233 @@ export default function SiswaUjianDetailPage() {
     );
   }
 
+  // Save status indicator component
+  const SaveStatusIndicator = ({ questionId, isEssay }: { questionId: string; isEssay?: boolean }) => (
+    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+      {saveStatus[questionId] === 'typing' && isEssay && (
+        <>
+          <CircleNotch className="w-3 h-3 animate-spin text-blue-600" />
+          <span>Mengetik... (auto-save dalam 3 detik)</span>
+        </>
+      )}
+      {saveStatus[questionId] === 'saving' && (
+        <>
+          <CircleNotch className="w-3 h-3 animate-spin text-blue-600" />
+          <span>Menyimpan...</span>
+        </>
+      )}
+      {saveStatus[questionId] === 'saved' && (
+        <>
+          <FloppyDisk className="w-3 h-3 text-green-600" weight="fill" />
+          <span>Tersimpan</span>
+          {lastSaved[questionId] && (
+            <span className="text-muted-foreground">• {format(lastSaved[questionId], "HH:mm:ss")}</span>
+          )}
+        </>
+      )}
+      {saveStatus[questionId] === 'error' && (
+        <>
+          <Warning className="w-3 h-3 text-red-600" weight="fill" />
+          <span>Gagal menyimpan (tersimpan di browser)</span>
+        </>
+      )}
+    </div>
+  );
+
+  // Render soal input based on type
+  const renderSoalInput = (q: any) => {
+    const data = q.data || {};
+
+    switch (q.tipe) {
+      case 'PILIHAN_GANDA': {
+        const opsi = data.opsi || [];
+        return (
+          <>
+            <RadioGroup
+              value={answers[q.id]?.jawaban || answers[q.id] || ""}
+              onValueChange={(value) => handleAnswerChange(q.id, { jawaban: value }, q.tipe)}
+              className="space-y-2 sm:space-y-3"
+            >
+              {opsi.map((o: any) => (
+                <div key={o.label} className="flex items-start space-x-3 p-3 sm:p-4 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors">
+                  <RadioGroupItem value={o.label} id={`${q.id}-${o.label}`} className="mt-1" />
+                  <Label htmlFor={`${q.id}-${o.label}`} className="flex-1 cursor-pointer">
+                    <span className="font-semibold mr-2">{o.label}.</span>
+                    <MathRenderer content={o.text || ""} className="inline text-sm sm:text-base" />
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+            {answers[q.id] && <SaveStatusIndicator questionId={q.id} />}
+          </>
+        );
+      }
+
+      case 'ESSAY': {
+        return (
+          <>
+            {/* Foto Jawaban */}
+            {essayImages[q.id] && (
+              <div className="mb-4">
+                <div className="relative border-2 border-blue-200 rounded-lg p-3 bg-blue-50/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <Label className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                      <ImageSquare className="w-4 h-4" weight="fill" />
+                      Foto Jawaban
+                    </Label>
+                    <div className="flex gap-1">
+                      <Button type="button" variant="outline" size="sm" className="h-7 px-2" onClick={() => openCameraModal(q.id)}>
+                        <Camera className="w-3 h-3 mr-1" /> Ganti
+                      </Button>
+                      <Button type="button" variant="destructive" size="sm" className="h-7 px-2" onClick={() => {
+                        const newImages = { ...essayImages };
+                        delete newImages[q.id];
+                        setEssayImages(newImages);
+                        try { localStorage.setItem(getImagesStorageKey(), JSON.stringify(newImages)); } catch {}
+                        toast.success('Foto jawaban dihapus');
+                      }}>
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <img src={essayImages[q.id]} alt="Jawaban essay" className="w-full h-auto rounded-lg border-2 border-white shadow-sm" />
+                </div>
+              </div>
+            )}
+
+            {!essayImages[q.id] && (
+              <div className="mb-3">
+                <Button type="button" variant="outline" size="sm" onClick={() => openCameraModal(q.id)} className="w-full sm:w-auto">
+                  <Camera className="w-4 h-4 mr-2" /> Ambil Foto Jawaban
+                </Button>
+                <p className="text-xs text-muted-foreground mt-1">Upload foto lembar jawaban Anda (opsional)</p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor={`essay-${q.id}`} className="text-sm font-semibold">
+                {essayImages[q.id] ? 'Catatan Tambahan (Opsional)' : 'Jawaban Tulisan'}
+              </Label>
+              <Textarea
+                id={`essay-${q.id}`}
+                value={typeof answers[q.id] === 'string' ? answers[q.id] : (answers[q.id]?.jawaban || "")}
+                onChange={(e) => handleAnswerChange(q.id, { jawaban: e.target.value }, q.tipe)}
+                onPaste={(e) => {
+                  setTimeout(() => {
+                    const newValue = (e.currentTarget as HTMLTextAreaElement).value;
+                    handleAnswerChange(q.id, { jawaban: newValue }, q.tipe);
+                    setTimeout(() => { saveAnswerToQueue(q.id, 'essay', { jawaban: newValue }); }, 500);
+                  }, 0);
+                }}
+                placeholder={essayImages[q.id] ? "Tulis catatan tambahan di sini (opsional)..." : "Tulis jawaban Anda di sini..."}
+                rows={essayImages[q.id] ? 4 : 8}
+                className="text-sm sm:text-base"
+              />
+            </div>
+            <SaveStatusIndicator questionId={q.id} isEssay />
+          </>
+        );
+      }
+
+      case 'ISIAN_SINGKAT': {
+        return (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor={`isian-${q.id}`} className="text-sm font-semibold">Jawaban Anda</Label>
+              <Input
+                id={`isian-${q.id}`}
+                value={answers[q.id]?.jawaban || ""}
+                onChange={(e) => handleAnswerChange(q.id, { jawaban: e.target.value }, q.tipe)}
+                placeholder="Ketik jawaban singkat Anda..."
+                className="text-sm sm:text-base"
+              />
+              {data.caseSensitive && (
+                <p className="text-xs text-amber-600">Perhatikan huruf besar/kecil</p>
+              )}
+            </div>
+            <SaveStatusIndicator questionId={q.id} />
+          </>
+        );
+      }
+
+      case 'BENAR_SALAH': {
+        const currentAnswer = answers[q.id]?.jawaban;
+        return (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                size="lg"
+                className={cn(
+                  "h-16 text-lg font-bold transition-all",
+                  currentAnswer === true
+                    ? "bg-green-100 border-green-500 text-green-700 ring-2 ring-green-300"
+                    : "hover:bg-green-50"
+                )}
+                onClick={() => handleAnswerChange(q.id, { jawaban: true }, q.tipe)}
+              >
+                Benar
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className={cn(
+                  "h-16 text-lg font-bold transition-all",
+                  currentAnswer === false
+                    ? "bg-red-100 border-red-500 text-red-700 ring-2 ring-red-300"
+                    : "hover:bg-red-50"
+                )}
+                onClick={() => handleAnswerChange(q.id, { jawaban: false }, q.tipe)}
+              >
+                Salah
+              </Button>
+            </div>
+            {currentAnswer !== undefined && <SaveStatusIndicator questionId={q.id} />}
+          </>
+        );
+      }
+
+      case 'PENCOCOKAN': {
+        const itemKiri = data.itemKiri || [];
+        const itemKanan = data.itemKanan || [];
+        const currentMapping = answers[q.id]?.jawaban || {};
+        const selectedKiriVal = pencocokanSelections[q.id]?.selectedKiri || null;
+
+        return (
+          <>
+            <PencocokanMatchUI
+              soalId={q.id}
+              itemKiri={itemKiri}
+              itemKanan={itemKanan}
+              currentMapping={currentMapping}
+              selectedKiri={selectedKiriVal}
+              onClickKiri={(kiriId) => {
+                setPencocokanSelections(prev => ({ ...prev, [q.id]: { selectedKiri: kiriId } }));
+              }}
+              onClickKanan={(kananId) => {
+                const newMapping = { ...currentMapping, [selectedKiriVal!]: kananId };
+                handleAnswerChange(q.id, { jawaban: newMapping }, q.tipe);
+                setPencocokanSelections(prev => ({ ...prev, [q.id]: { selectedKiri: null } }));
+              }}
+              onReset={() => {
+                handleAnswerChange(q.id, { jawaban: {} }, q.tipe);
+                setPencocokanSelections(prev => ({ ...prev, [q.id]: { selectedKiri: null } }));
+              }}
+            />
+            {Object.keys(currentMapping).length > 0 && <SaveStatusIndicator questionId={q.id} />}
+          </>
+        );
+      }
+
+      default:
+        return <p className="text-red-500">Tipe soal tidak dikenali: {q.tipe}</p>;
+    }
+  };
+
   return (
     <>
       <div className="fixed inset-0 z-[9999] bg-gray-50 flex flex-col">
-      {/* Header Bar - Sticky di atas */}
+      {/* Header Bar */}
       <div className="sticky top-0 z-50 bg-white border-b shadow-sm">
         <div className="flex items-center justify-between p-3 sm:p-4">
           <div className="flex-1 min-w-0">
@@ -1213,7 +1437,6 @@ export default function SiswaUjianDetailPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Queue Status Indicator */}
             {(queueStatus.saving > 0 || queueStatus.pending > 0 || queueStatus.failed > 0) && (
               <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-xs">
                 {queueStatus.saving > 0 && (
@@ -1222,12 +1445,8 @@ export default function SiswaUjianDetailPage() {
                     {queueStatus.saving}
                   </span>
                 )}
-                {queueStatus.pending > 0 && (
-                  <span className="text-yellow-600">⏸️ {queueStatus.pending}</span>
-                )}
-                {queueStatus.failed > 0 && (
-                  <span className="text-red-600">❌ {queueStatus.failed}</span>
-                )}
+                {queueStatus.pending > 0 && <span className="text-yellow-600">⏳ {queueStatus.pending}</span>}
+                {queueStatus.failed > 0 && <span className="text-red-600">⚠ {queueStatus.failed}</span>}
               </div>
             )}
             <div className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg ${
@@ -1244,207 +1463,30 @@ export default function SiswaUjianDetailPage() {
         </div>
       </div>
 
-      {/* Content Area - Scrollable */}
+      {/* Content Area */}
       <div className="flex-1 overflow-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
-
         <Card className="rounded-xl sm:rounded-2xl border-0 shadow-sm">
           <CardContent className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6">
             <div>
               <div className="flex items-start gap-3 mb-4">
                 <span className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-sm sm:text-base">
-                  {currentQuestion + 1}
+                  {safeCurrentQuestion + 1}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm text-muted-foreground mb-2">
-                    {isPG ? "Pilihan Ganda" : "Essay"}
-                  </p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="outline" className="text-xs">
+                      {TIPE_LABELS[currentQ.tipe] || currentQ.tipe}
+                    </Badge>
+                    {currentQ.poin > 1 && (
+                      <Badge variant="secondary" className="text-xs">{currentQ.poin} poin</Badge>
+                    )}
+                  </div>
                   <MathRenderer content={currentQ.pertanyaan || ""} className="text-base sm:text-lg" />
                 </div>
               </div>
 
-              {isPG ? (
-                <>
-                  <RadioGroup
-                    value={answers[currentQ.id] || ""}
-                    onValueChange={(value) => handleAnswerChange(currentQ.id, value, 'multiple_choice')}
-                    className="space-y-2 sm:space-y-3"
-                  >
-                    {['A', 'B', 'C', 'D'].map((option) => (
-                      <div key={option} className="flex items-start space-x-3 p-3 sm:p-4 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors">
-                        <RadioGroupItem value={option} id={`${currentQ.id}-${option}`} className="mt-1" />
-                        <Label htmlFor={`${currentQ.id}-${option}`} className="flex-1 cursor-pointer">
-                          <span className="font-semibold mr-2">{option}.</span>
-                          <MathRenderer content={currentQ[`opsi${option}`] || ""} className="inline text-sm sm:text-base" />
-                        </Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
-                  {/* Save status indicator for PG */}
-                  {answers[currentQ.id] && (
-                    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                      {saveStatus[currentQ.id] === 'saving' && (
-                        <>
-                          <CircleNotch className="w-3 h-3 animate-spin text-blue-600" />
-                          <span>Menyimpan...</span>
-                        </>
-                      )}
-                      {saveStatus[currentQ.id] === 'saved' && (
-                        <>
-                          <FloppyDisk className="w-3 h-3 text-green-600" weight="fill" />
-                          <span>Tersimpan</span>
-                          {lastSaved[currentQ.id] && (
-                            <span className="text-muted-foreground">
-                              • {format(lastSaved[currentQ.id], "HH:mm:ss")}
-                            </span>
-                          )}
-                        </>
-                      )}
-                      {saveStatus[currentQ.id] === 'error' && (
-                        <>
-                          <Warning className="w-3 h-3 text-red-600" weight="fill" />
-                          <span>Gagal menyimpan</span>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  {/* Foto Jawaban (jika ada) - Ditampilkan di atas */}
-                  {essayImages[currentQ.id] && (
-                    <div className="mb-4">
-                      <div className="relative border-2 border-blue-200 rounded-lg p-3 bg-blue-50/30">
-                        <div className="flex items-center justify-between mb-2">
-                          <Label className="text-sm font-semibold text-blue-900 flex items-center gap-2">
-                            <ImageSquare className="w-4 h-4" weight="fill" />
-                            Foto Jawaban
-                          </Label>
-                          <div className="flex gap-1">
-                    <Button
-                      type="button"
-                              variant="outline"
-                      size="sm"
-                              className="h-7 px-2"
-                              onClick={() => openCameraModal(currentQ.id)}
-                    >
-                              <Camera className="w-3 h-3 mr-1" />
-                              Ganti
-                    </Button>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                              className="h-7 px-2"
-                            onClick={() => {
-                              const newImages = { ...essayImages };
-                              delete newImages[currentQ.id];
-                              setEssayImages(newImages);
-                              // Update localStorage
-                              try {
-                                localStorage.setItem(getImagesStorageKey(), JSON.stringify(newImages));
-                              } catch (error) {
-                                console.error('Error updating localStorage:', error);
-                              }
-                                toast.success('Foto jawaban dihapus');
-                            }}
-                          >
-                              <X className="w-3 h-3" />
-                          </Button>
-                          </div>
-                        </div>
-                        <img
-                          src={essayImages[currentQ.id]}
-                          alt="Jawaban essay"
-                          className="w-full h-auto rounded-lg border-2 border-white shadow-sm"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Tombol Ambil Foto (jika belum ada foto) */}
-                  {!essayImages[currentQ.id] && (
-                    <div className="mb-3">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                        onClick={() => openCameraModal(currentQ.id)}
-                        className="w-full sm:w-auto"
-                          >
-                            <Camera className="w-4 h-4 mr-2" />
-                        Ambil Foto Jawaban
-                          </Button>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Upload foto lembar jawaban Anda (opsional)
-                      </p>
-                        </div>
-                  )}
-
-                  {/* Text Area - Selalu ditampilkan */}
-                  <div className="space-y-2">
-                    <Label htmlFor={`essay-${currentQ.id}`} className="text-sm font-semibold">
-                      {essayImages[currentQ.id] ? 'Catatan Tambahan (Opsional)' : 'Jawaban Tulisan'}
-                    </Label>
-                    <Textarea
-                      id={`essay-${currentQ.id}`}
-                      value={answers[currentQ.id] || ""}
-                      onChange={(e) => handleAnswerChange(currentQ.id, e.target.value, 'essay')}
-                      onPaste={(e) => {
-                        // Trigger immediate save on paste
-                        setTimeout(() => {
-                          const newValue = (e.currentTarget as HTMLTextAreaElement).value;
-                          handleAnswerChange(currentQ.id, newValue, 'essay');
-                          // Save immediately after paste
-                          setTimeout(() => {
-                            saveAnswerToQueue(currentQ.id, 'essay', newValue);
-                          }, 500);
-                        }, 0);
-                      }}
-                      placeholder={essayImages[currentQ.id] 
-                        ? "Tulis catatan atau penjelasan tambahan di sini (opsional)..."
-                        : "Tulis jawaban Anda di sini..."
-                      }
-                      rows={essayImages[currentQ.id] ? 4 : 8}
-                      className="text-sm sm:text-base"
-                    />
-                        </div>
-
-                  {/* Save status indicator for Essay */}
-                  <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                    {saveStatus[currentQ.id] === 'typing' && (
-                      <>
-                        <CircleNotch className="w-3 h-3 animate-spin text-blue-600" />
-                        <span>Mengetik... (auto-save dalam 3 detik)</span>
-                      </>
-                    )}
-                    {saveStatus[currentQ.id] === 'saving' && (
-                      <>
-                        <CircleNotch className="w-3 h-3 animate-spin text-blue-600" />
-                        <span>Menyimpan...</span>
-                      </>
-                    )}
-                    {saveStatus[currentQ.id] === 'saved' && (
-                      <>
-                        <FloppyDisk className="w-3 h-3 text-green-600" weight="fill" />
-                        <span>Tersimpan</span>
-                        {lastSaved[currentQ.id] && (
-                          <span className="text-muted-foreground">
-                            • {format(lastSaved[currentQ.id], "HH:mm:ss")}
-                          </span>
-                        )}
-                        <span className="text-muted-foreground">• Auto-save setiap 15 detik</span>
-                      </>
-                    )}
-                    {saveStatus[currentQ.id] === 'error' && (
-                      <>
-                        <Warning className="w-3 h-3 text-red-600" weight="fill" />
-                        <span>Gagal menyimpan (tersimpan di browser)</span>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-          </div>
+              {renderSoalInput(currentQ)}
+            </div>
 
             <div className="flex flex-col sm:flex-row justify-between gap-3 pt-4 sm:pt-6 border-t">
               <Button
@@ -1484,7 +1526,7 @@ export default function SiswaUjianDetailPage() {
           <CardContent className="p-4 sm:p-6">
             <h3 className="font-semibold text-sm sm:text-base mb-3 sm:mb-4">Navigasi Soal</h3>
             <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
-              {allQuestions.map((q, idx) => (
+              {allQuestions.map((q: any, idx: number) => (
                 <Button
                   key={q.id}
                   variant={idx === safeCurrentQuestion ? "default" : answers[q.id] ? "secondary" : "outline"}
@@ -1532,16 +1574,16 @@ export default function SiswaUjianDetailPage() {
                     <li>• Total soal: {allQuestions.length}</li>
                     <li>• Sudah dijawab: {Object.keys(answers).filter(key => {
                       const answer = answers[key];
-                      return answer && (typeof answer === 'string' ? answer.trim() !== '' : true);
+                      return answer && (typeof answer === 'string' ? answer.trim() !== '' : typeof answer === 'object');
                     }).length}</li>
                     <li>• Belum dijawab: {allQuestions.length - Object.keys(answers).filter(key => {
                       const answer = answers[key];
-                      return answer && (typeof answer === 'string' ? answer.trim() !== '' : true);
+                      return answer && (typeof answer === 'string' ? answer.trim() !== '' : typeof answer === 'object');
                     }).length}</li>
                   </ul>
                 </div>
                 <p className="text-amber-600 font-medium text-sm mt-3">
-                  ⚠️ Setelah dikumpulkan, Anda tidak dapat mengubah jawaban lagi.
+                  Setelah dikumpulkan, Anda tidak dapat mengubah jawaban lagi.
                 </p>
               </div>
             </AlertDialogDescription>
@@ -1575,10 +1617,8 @@ export default function SiswaUjianDetailPage() {
             <AlertDialogAction
               onClick={() => {
                 setShowValidationError(false);
-                // Navigate to first unanswered question
-                const { soalPG, soalEssay } = ujianData;
-                const allQuestions = [...soalPG, ...soalEssay];
-                const firstUnanswered = allQuestions.findIndex((q: any) => {
+                const soalList = ujianData.soal || [];
+                const firstUnanswered = soalList.findIndex((q: any) => {
                   const answer = answers[q.id];
                   return !answer || (typeof answer === 'string' && answer.trim() === '');
                 });
@@ -1594,7 +1634,6 @@ export default function SiswaUjianDetailPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Camera Dialog for Essay Photo */}
       {/* Canvas tersembunyi untuk capture */}
       <canvas ref={canvasRef} className="hidden" />
 

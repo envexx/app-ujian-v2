@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/session';
 
+const MANUAL_GRADE_TYPES = ['ESSAY'];
+const PARTIAL_SCORE_TYPES = ['PENCOCOKAN'];
+
 /**
- * POST - Recalculate all scores for an exam with current grade config
+ * POST - Recalculate all scores for an exam using poin-based scoring
  */
 export async function POST(
   request: Request,
@@ -19,19 +22,7 @@ export async function POST(
       );
     }
 
-    // Await params for Next.js 15
     const { id } = await params;
-
-    const body = await request.json();
-    const { bobotPG, bobotEssay } = body;
-
-    // Validate percentages
-    if (!bobotPG || !bobotEssay) {
-      return NextResponse.json(
-        { success: false, error: 'Bobot PG dan Essay harus diisi' },
-        { status: 400 }
-      );
-    }
 
     // Get guru data
     const guru = await prisma.guru.findFirst({
@@ -45,19 +36,14 @@ export async function POST(
       );
     }
 
-    // Get ujian with submissions
+    // Get ujian with soal and submissions
     const ujian = await prisma.ujian.findUnique({
       where: { id },
       include: {
-        soalPilihanGanda: true,
-        soalEssay: true,
+        soal: { orderBy: { urutan: 'asc' } },
         submissions: {
-          where: {
-            status: 'completed', // Only recalculate completed submissions
-          },
           include: {
-            jawabanPilihanGanda: true,
-            jawabanEssay: true,
+            jawabanSoal: true,
           },
         },
       },
@@ -78,58 +64,58 @@ export async function POST(
       );
     }
 
-    const totalSoalPG = ujian.soalPilihanGanda.length;
-    const totalSoalEssay = ujian.soalEssay.length;
-
     let updatedCount = 0;
 
     // Recalculate each submission
     for (const submission of ujian.submissions) {
-      // Calculate PG score
-      const correctPG = submission.jawabanPilihanGanda
-        ? submission.jawabanPilihanGanda.filter((j: any) => j.isCorrect).length
-        : 0;
-      const nilaiPG = totalSoalPG > 0 ? Math.round((correctPG / totalSoalPG) * 100) : 0;
+      let totalPoinAuto = 0;
+      let totalPoinManual = 0;
+      let earnedPoinAuto = 0;
+      let earnedPoinManual = 0;
 
-      // Calculate Essay score
-      const totalNilaiEssay = submission.jawabanEssay.reduce(
-        (sum, j) => sum + (j.nilai || 0),
-        0
-      );
-      const nilaiEssay = totalSoalEssay > 0 ? totalNilaiEssay / totalSoalEssay : 0;
+      for (const soal of ujian.soal) {
+        const jawaban = submission.jawabanSoal.find(j => j.soalId === soal.id);
+        const isManual = MANUAL_GRADE_TYPES.includes(soal.tipe);
 
-      // Calculate weighted final score
-      let nilaiAkhir = 0;
-      if (totalSoalPG > 0 && totalSoalEssay > 0) {
-        // Both PG and Essay exist - use percentage weights
-        nilaiAkhir = Math.round((nilaiPG * bobotPG / 100) + (nilaiEssay * bobotEssay / 100));
-      } else if (totalSoalPG > 0) {
-        // Only PG - use full PG score
-        nilaiAkhir = nilaiPG;
-      } else if (totalSoalEssay > 0) {
-        // Only Essay - use full Essay score
-        nilaiAkhir = Math.round(nilaiEssay);
+        if (isManual) {
+          totalPoinManual += soal.poin;
+          if (jawaban && jawaban.nilai !== null) {
+            // Manual grade: nilai is direct poin earned (0 to soal.poin)
+            earnedPoinManual += Math.min(jawaban.nilai, soal.poin);
+          }
+        } else {
+          totalPoinAuto += soal.poin;
+          const isPartial = PARTIAL_SCORE_TYPES.includes(soal.tipe);
+          if (jawaban) {
+            if (isPartial && jawaban.nilai !== null) {
+              // Partial scoring: nilai is 0-100, convert to proportional poin
+              earnedPoinAuto += Math.round((jawaban.nilai / 100) * soal.poin);
+            } else if (jawaban.isCorrect) {
+              // Binary scoring: full poin if correct
+              earnedPoinAuto += soal.poin;
+            }
+          }
+        }
       }
 
-      // Update submission with new score
+      const earnedTotal = earnedPoinAuto + earnedPoinManual;
+      // Direct sum — no percentage conversion. Total poin = 100, so earned = final score.
+      const nilaiTotal = earnedTotal;
+
       await prisma.ujianSubmission.update({
         where: { id: submission.id },
-        data: { nilai: nilaiAkhir },
+        data: { nilai: nilaiTotal },
       });
 
       updatedCount++;
     }
 
-    console.log(`Recalculated ${updatedCount} submissions with PG:${bobotPG}% Essay:${bobotEssay}%`);
+    console.log(`Recalculated ${updatedCount} submissions for ujian ${id}`);
 
     return NextResponse.json({
       success: true,
       message: `Berhasil menghitung ulang ${updatedCount} nilai`,
       updated: updatedCount,
-      config: {
-        bobotPG,
-        bobotEssay,
-      },
     });
   } catch (error) {
     console.error('Error recalculating scores:', error);

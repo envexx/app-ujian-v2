@@ -183,14 +183,14 @@ model Siswa {
   nisn         String   @unique
   nis          String   @unique
   nama         String
-  email        String   @unique
+  email        String?  @unique
   kelasId      String
   jenisKelamin String
-  tanggalLahir DateTime
-  alamat       String
+  tanggalLahir DateTime?
+  alamat       String?
   noTelp       String?
-  namaWali     String
-  noTelpWali   String
+  namaWali     String?
+  noTelpWali   String?
   foto         String?  // URL to profile photo
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -398,8 +398,7 @@ model Ujian {
   // Relations
   mapel            MataPelajaran      @relation(fields: [mapelId], references: [id], onDelete: Cascade)
   guru             Guru               @relation(fields: [guruId], references: [id], onDelete: Cascade)
-  soalPilihanGanda SoalPilihanGanda[]
-  soalEssay        SoalEssay[]
+  soal             Soal[]
   submissions      UjianSubmission[]
 
   @@index([guruId])
@@ -428,40 +427,58 @@ model UjianAccessControl {
   @@map("ujian_access_control")
 }
 
-model SoalPilihanGanda {
+
+
+// ============================================
+// SOAL BARU (Multi-Type Unified System)
+// ============================================
+
+model Soal {
   id            String   @id @default(cuid())
   ujianId       String
-  pertanyaan    String
-  opsiA         String
-  opsiB         String
-  opsiC         String
-  opsiD         String
-  jawabanBenar  String // A, B, C, D
-  urutan        Int
+  tipe          String   // 'PILIHAN_GANDA', 'ESSAY', 'ISIAN_SINGKAT', 'PENCOCOKAN', 'BENAR_SALAH'
+  urutan        Int      // Urutan global untuk semua tipe soal
+  pertanyaan    String   @db.Text // Support rich text panjang
+  poin          Int      @default(1) // Bobot poin per soal
+  
+  // Data spesifik per tipe soal (JSON flexible)
+  data          Json     // PostgreSQL JSONB
+  
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   // Relations
-  ujian   Ujian                      @relation(fields: [ujianId], references: [id], onDelete: Cascade)
-  jawaban JawabanPilihanGanda[]
+  ujian         Ujian              @relation(fields: [ujianId], references: [id], onDelete: Cascade)
+  jawaban       JawabanSoal[]
 
-  @@map("soal_pilihan_ganda")
+  @@index([ujianId])
+  @@index([urutan])
+  @@index([tipe])
+  @@map("soal")
 }
 
-model SoalEssay {
-  id           String   @id @default(cuid())
-  ujianId      String
-  pertanyaan   String
-  kunciJawaban String
-  urutan       Int
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+model JawabanSoal {
+  id            String   @id @default(cuid())
+  submissionId  String
+  soalId        String
+  
+  // Jawaban siswa (format sesuai tipe soal)
+  jawaban       Json     // PostgreSQL JSONB
+  
+  nilai         Int?     // Nilai untuk soal ini
+  feedback      String?  @db.Text // Feedback dari guru
+  isCorrect     Boolean? // Auto-graded untuk PG, Isian, Benar-Salah
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Relations
-  ujian   Ujian            @relation(fields: [ujianId], references: [id], onDelete: Cascade)
-  jawaban JawabanEssay[]
+  submission    UjianSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  soal          Soal            @relation(fields: [soalId], references: [id], onDelete: Cascade)
 
-  @@map("soal_essay")
+  @@unique([submissionId, soalId])
+  @@index([submissionId])
+  @@index([soalId])
+  @@map("jawaban_soal")
 }
 
 model UjianSubmission {
@@ -478,45 +495,13 @@ model UjianSubmission {
   // Relations
   ujian              Ujian                   @relation(fields: [ujianId], references: [id], onDelete: Cascade)
   siswa              Siswa                   @relation(fields: [siswaId], references: [id], onDelete: Cascade)
-  jawabanPilihanGanda JawabanPilihanGanda[]
-  jawabanEssay       JawabanEssay[]
+  jawabanSoal        JawabanSoal[]
 
   @@unique([ujianId, siswaId])
+  @@index([ujianId])
+  @@index([siswaId])
+  @@index([status])
   @@map("ujian_submission")
-}
-
-model JawabanPilihanGanda {
-  id           String   @id @default(cuid())
-  submissionId String
-  soalId       String
-  jawaban      String // A, B, C, D
-  isCorrect    Boolean  @default(false)
-  createdAt    DateTime @default(now())
-
-  // Relations
-  submission UjianSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  soal       SoalPilihanGanda @relation(fields: [soalId], references: [id], onDelete: Cascade)
-
-  @@unique([submissionId, soalId])
-  @@map("jawaban_pilihan_ganda")
-}
-
-model JawabanEssay {
-  id           String    @id @default(cuid())
-  submissionId String
-  soalId       String
-  jawaban      String
-  nilai        Int?
-  feedback     String?
-  gradedAt     DateTime?
-  createdAt    DateTime  @default(now())
-
-  // Relations
-  submission UjianSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  soal       SoalEssay        @relation(fields: [soalId], references: [id], onDelete: Cascade)
-
-  @@unique([submissionId, soalId])
-  @@map("jawaban_essay")
 }
 
 // ============================================

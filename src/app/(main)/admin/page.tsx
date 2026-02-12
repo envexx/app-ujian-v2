@@ -3,10 +3,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Student, Users, BookOpen, ClipboardText } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { formatDistanceToNow } from "date-fns";
 import { id } from "date-fns/locale";
+import useSWR from "swr";
 
 interface DashboardStats {
   totalSiswa: number;
@@ -22,45 +22,25 @@ interface Activity {
   color: string;
 }
 
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch');
+  return res.json();
+};
+
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<DashboardStats>({
-    totalSiswa: 0,
-    totalGuru: 0,
-    totalKelas: 0,
-    ujianAktif: 0,
+  const { data: statsData, isLoading: statsLoading } = useSWR('/api/dashboard/stats', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30000,
   });
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: activitiesData, isLoading: activitiesLoading } = useSWR('/api/dashboard/activities', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30000,
+  });
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Fetch statistics
-        const statsResponse = await fetch('/api/dashboard/stats');
-        const statsResult = await statsResponse.json();
-        
-        if (statsResult.success) {
-          setStats(statsResult.data);
-        }
-
-        // Fetch activities
-        const activitiesResponse = await fetch('/api/dashboard/activities');
-        const activitiesResult = await activitiesResponse.json();
-        
-        if (activitiesResult.success) {
-          setActivities(activitiesResult.data);
-        }
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchDashboardData();
-  }, []);
+  const isLoading = statsLoading || activitiesLoading;
+  const stats: DashboardStats = statsData?.data || { totalSiswa: 0, totalGuru: 0, totalKelas: 0, ujianAktif: 0 };
+  const activities: Activity[] = activitiesData?.data || [];
 
   const statCards = [
     {
@@ -98,6 +78,7 @@ export default function AdminDashboard() {
   }
 
   return (
+
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Dashboard Admin</h1>

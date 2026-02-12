@@ -83,42 +83,79 @@ async function main() {
 
     console.log('✅ Created ujian:', ujian.judul);
 
-    // Create 4 soal pilihan ganda
-    const soalPG = [
+    // Create 4 soal pilihan ganda (unified Soal model)
+    const soalData = [
       {
         ujianId: ujian.id,
+        tipe: 'PILIHAN_GANDA',
         pertanyaan: 'Berapakah hasil dari 15 + 27?',
-        opsiA: '40', opsiB: '42', opsiC: '44', opsiD: '45',
-        jawabanBenar: 'B',
+        poin: 25,
+        data: JSON.stringify({
+          opsi: [
+            { id: 'A', teks: '40' },
+            { id: 'B', teks: '42' },
+            { id: 'C', teks: '44' },
+            { id: 'D', teks: '45' },
+          ],
+          kunciJawaban: 'B',
+        }),
         urutan: 1,
       },
       {
         ujianId: ujian.id,
+        tipe: 'PILIHAN_GANDA',
         pertanyaan: 'Jika persegi panjang P=8 L=5, berapa luasnya?',
-        opsiA: '35 cm²', opsiB: '40 cm²', opsiC: '45 cm²', opsiD: '50 cm²',
-        jawabanBenar: 'B',
+        poin: 25,
+        data: JSON.stringify({
+          opsi: [
+            { id: 'A', teks: '35 cm²' },
+            { id: 'B', teks: '40 cm²' },
+            { id: 'C', teks: '45 cm²' },
+            { id: 'D', teks: '50 cm²' },
+          ],
+          kunciJawaban: 'B',
+        }),
         urutan: 2,
       },
       {
         ujianId: ujian.id,
+        tipe: 'PILIHAN_GANDA',
         pertanyaan: 'Berapakah hasil dari 144 ÷ 12?',
-        opsiA: '10', opsiB: '11', opsiC: '12', opsiD: '13',
-        jawabanBenar: 'C',
+        poin: 25,
+        data: JSON.stringify({
+          opsi: [
+            { id: 'A', teks: '10' },
+            { id: 'B', teks: '11' },
+            { id: 'C', teks: '12' },
+            { id: 'D', teks: '13' },
+          ],
+          kunciJawaban: 'C',
+        }),
         urutan: 3,
       },
       {
-        ujianId: ujian.id,        pertanyaan: 'Jika x = 5, berapakah nilai dari 3x + 7?',
-        opsiA: '20', opsiB: '22', opsiC: '24', opsiD: '26',
-        jawabanBenar: 'B',
+        ujianId: ujian.id,
+        tipe: 'PILIHAN_GANDA',
+        pertanyaan: 'Jika x = 5, berapakah nilai dari 3x + 7?',
+        poin: 25,
+        data: JSON.stringify({
+          opsi: [
+            { id: 'A', teks: '20' },
+            { id: 'B', teks: '22' },
+            { id: 'C', teks: '24' },
+            { id: 'D', teks: '26' },
+          ],
+          kunciJawaban: 'B',
+        }),
         urutan: 4,
       },
     ];
 
-    await (prisma as any).soalPilihanGanda.createMany({
-      data: soalPG,
+    await (prisma as any).soal.createMany({
+      data: soalData,
     });
 
-    console.log(`✅ Created ${soalPG.length} soal pilihan ganda`);
+    console.log(`✅ Created ${soalData.length} soal pilihan ganda`);
     console.log('\n✅ DUMMY UJIAN CREATED SUCCESSFULLY!');
 
   } catch (error) {

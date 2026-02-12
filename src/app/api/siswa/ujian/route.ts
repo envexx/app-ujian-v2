@@ -63,16 +63,10 @@ export async function GET(request: Request) {
       },
       include: {
         mapel: true,
-        soalPilihanGanda: {
+        soal: {
           select: {
             id: true,
-            // SECURITY: Don't send jawabanBenar to prevent cheating
-          },
-        },
-        soalEssay: {
-          select: {
-            id: true,
-            // SECURITY: Don't send kunciJawaban to prevent cheating
+            // SECURITY: Don't send data (contains answer keys) to prevent cheating
           },
         },
         submissions: {
@@ -122,7 +116,7 @@ export async function GET(request: Request) {
             mapel: u.mapel.nama,
             startUjian: u.startUjian,
             endUjian: u.endUjian,
-            totalSoal: u.soalPilihanGanda.length + u.soalEssay.length,
+            totalSoal: u.soal.length,
             status: u.status,
             examStatus, // belum_dimulai, berlangsung, berakhir, selesai
             canStart, // boolean - can student start this exam now

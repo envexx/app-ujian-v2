@@ -57,7 +57,6 @@ export default function SiswaPage() {
     nis: "",
     nisn: "",
     nama: "",
-    email: "",
     kelasId: "",
     jenisKelamin: "L",
     tanggalLahir: "",
@@ -87,13 +86,14 @@ export default function SiswaPage() {
         body: JSON.stringify(payload),
       });
 
-      if (response.ok) {
-        toast.success(editingSiswa ? "Data siswa berhasil diperbarui" : "Siswa berhasil ditambahkan");
+      const result = await response.json();
+      if (response.ok && result.success) {
+        toast.success(result.message || (editingSiswa ? "Data siswa berhasil diperbarui" : "Siswa berhasil ditambahkan"));
         mutate();
         setIsDialogOpen(false);
         resetForm();
       } else {
-        toast.error("Gagal menyimpan data siswa");
+        toast.error(result.error || "Gagal menyimpan data siswa");
       }
     } catch (error) {
       toast.error("Terjadi kesalahan");
@@ -106,7 +106,6 @@ export default function SiswaPage() {
       nis: s.nis || "",
       nisn: s.nisn || "",
       nama: s.nama || "",
-      email: s.email || "",
       kelasId: s.kelasId || "",
       jenisKelamin: s.jenisKelamin || "L",
       tanggalLahir: s.tanggalLahir ? new Date(s.tanggalLahir).toISOString().split('T')[0] : "",
@@ -147,7 +146,6 @@ export default function SiswaPage() {
       nis: "",
       nisn: "",
       nama: "",
-      email: "",
       kelasId: "",
       jenisKelamin: "L",
       tanggalLahir: "",
@@ -296,7 +294,6 @@ export default function SiswaPage() {
                 <TableHead>NISN</TableHead>
                 <TableHead>Nama</TableHead>
                 <TableHead>Kelas</TableHead>
-                <TableHead>Email</TableHead>
                 <TableHead>Jenis Kelamin</TableHead>
                 <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
@@ -304,7 +301,7 @@ export default function SiswaPage() {
             <TableBody>
               {filteredSiswa.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
                     Tidak ada data siswa
                   </TableCell>
                 </TableRow>
@@ -315,7 +312,6 @@ export default function SiswaPage() {
                     <TableCell>{s.nisn}</TableCell>
                     <TableCell className="font-medium">{s.nama}</TableCell>
                     <TableCell>{s.kelas?.nama || '-'}</TableCell>
-                    <TableCell>{s.email}</TableCell>
                     <TableCell>{s.jenisKelamin === 'L' ? 'Laki-laki' : 'Perempuan'}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
@@ -375,30 +371,18 @@ export default function SiswaPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email *</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="kelasId">Kelas *</Label>
-                <Select value={formData.kelasId} onValueChange={(value) => setFormData({ ...formData, kelasId: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih kelas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {kelasList.map((k: any) => (
-                      <SelectItem key={k.id} value={k.id}>{k.nama}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="kelasId">Kelas *</Label>
+              <Select value={formData.kelasId} onValueChange={(value) => setFormData({ ...formData, kelasId: value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih kelas" />
+                </SelectTrigger>
+                <SelectContent>
+                  {kelasList.map((k: any) => (
+                    <SelectItem key={k.id} value={k.id}>{k.nama}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -415,13 +399,12 @@ export default function SiswaPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="tanggalLahir">Tanggal Lahir *</Label>
+                <Label htmlFor="tanggalLahir">Tanggal Lahir</Label>
                 <Input
                   id="tanggalLahir"
                   type="date"
                   value={formData.tanggalLahir}
                   onChange={(e) => setFormData({ ...formData, tanggalLahir: e.target.value })}
-                  required
                 />
               </div>
             </div>

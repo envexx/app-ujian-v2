@@ -4,13 +4,18 @@ import { useState } from "react";
 import useSWR from "swr";
 import { useRouter, useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { MathRenderer } from "@/components/ui/math-renderer";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, FileText, ListChecks, Article } from "@phosphor-icons/react";
+import { ArrowLeft, PencilSimple, ListChecks, Article, TextT, ArrowsLeftRight, CheckCircle, Eye, EyeSlash, Clock, Exam, Printer } from "@phosphor-icons/react";
+import { Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
+import { cn } from "@/lib/utils";
+import { TIPE_SOAL_LABELS } from "@/types/soal";
+import type { PilihanGandaData, EssayData, IsianSingkatData, PencocokanData, BenarSalahData } from "@/types/soal";
 
 const fetcher = async (url: string) => {
   const res = await fetch(url);
@@ -18,10 +23,246 @@ const fetcher = async (url: string) => {
   return res.json();
 };
 
+const TIPE_ICON: Record<string, React.ReactNode> = {
+  PILIHAN_GANDA: <ListChecks className="w-4 h-4" weight="duotone" />,
+  ESSAY: <Article className="w-4 h-4" weight="duotone" />,
+  ISIAN_SINGKAT: <TextT className="w-4 h-4" weight="duotone" />,
+  PENCOCOKAN: <ArrowsLeftRight className="w-4 h-4" weight="duotone" />,
+  BENAR_SALAH: <CheckCircle className="w-4 h-4" weight="duotone" />,
+};
+
+/**
+ * Student-style soal preview with optional answer key overlay.
+ * This renders each soal type exactly as students will see it during the exam,
+ * with a green overlay showing the correct answer when showKey is true.
+ */
+function SoalStudentPreview({ soal, showKey }: { soal: any; showKey: boolean }) {
+  const data = soal.data;
+
+  switch (soal.tipe) {
+    case 'PILIHAN_GANDA': {
+      const pgData = data as PilihanGandaData;
+      return (
+        <div className="space-y-2">
+          {pgData.opsi?.map((opsi) => {
+            const isAnswer = pgData.kunciJawaban === opsi.label;
+            return (
+              <div
+                key={opsi.label}
+                className={cn(
+                  "flex items-start gap-3 p-3 sm:p-4 border rounded-lg transition-colors",
+                  showKey && isAnswer
+                    ? "bg-green-50 border-green-400 ring-2 ring-green-200"
+                    : "bg-white border-gray-200 hover:bg-muted/50"
+                )}
+              >
+                <div className={cn(
+                  "flex-shrink-0 w-5 h-5 mt-0.5 rounded-full border-2 flex items-center justify-center",
+                  showKey && isAnswer
+                    ? "border-green-500 bg-green-500"
+                    : "border-gray-300"
+                )}>
+                  {showKey && isAnswer && (
+                    <div className="w-2 h-2 rounded-full bg-white" />
+                  )}
+                </div>
+                <div className="flex-1 flex items-center gap-2">
+                  <span className={cn(
+                    "font-semibold text-sm",
+                    showKey && isAnswer ? "text-green-700" : "text-gray-700"
+                  )}>{opsi.label}.</span>
+                  <MathRenderer content={opsi.text || ""} className={cn(
+                    "text-sm",
+                    showKey && isAnswer ? "text-green-900" : "text-gray-700"
+                  )} />
+                </div>
+                {showKey && isAnswer && (
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" weight="fill" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    case 'ESSAY': {
+      const essayData = data as EssayData;
+      return (
+        <div className="space-y-3">
+          {/* Student view: textarea placeholder */}
+          <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 bg-gray-50/50">
+            <p className="text-sm text-muted-foreground italic">Siswa akan menulis jawaban di sini...</p>
+            <div className="mt-2 h-20 bg-white border border-gray-200 rounded-md" />
+          </div>
+          {/* Answer key overlay */}
+          {showKey && essayData.kunciJawaban && (
+            <div className="p-3 bg-green-50 border border-green-300 rounded-lg">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <CheckCircle className="w-4 h-4 text-green-600" weight="fill" />
+                <p className="text-xs font-semibold text-green-700">Kunci Jawaban</p>
+              </div>
+              <MathRenderer content={essayData.kunciJawaban} className="text-sm text-green-900" />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    case 'ISIAN_SINGKAT': {
+      const isianData = data as IsianSingkatData;
+      return (
+        <div className="space-y-3">
+          {/* Student view: input field */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-10 bg-white border border-gray-300 rounded-md px-3 flex items-center">
+              <span className="text-sm text-muted-foreground italic">Ketik jawaban singkat...</span>
+            </div>
+          </div>
+          {/* Answer key overlay */}
+          {showKey && (
+            <div className="p-3 bg-green-50 border border-green-300 rounded-lg">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <CheckCircle className="w-4 h-4 text-green-600" weight="fill" />
+                <p className="text-xs font-semibold text-green-700">
+                  Jawaban yang Diterima {isianData.caseSensitive ? "(Case Sensitive)" : "(Case Insensitive)"}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {isianData.kunciJawaban?.map((jawaban, idx) => (
+                  <Badge key={idx} variant="secondary" className="bg-green-100 text-green-800 border-green-200">
+                    {jawaban || "(kosong)"}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    case 'BENAR_SALAH': {
+      const bsData = data as BenarSalahData;
+      return (
+        <div className="space-y-3">
+          {/* Student view: two buttons */}
+          <div className="flex gap-3">
+            <div className={cn(
+              "flex-1 p-4 rounded-lg border-2 text-center font-semibold transition-colors cursor-default",
+              showKey && bsData.kunciJawaban === true
+                ? "bg-green-50 border-green-400 text-green-700 ring-2 ring-green-200"
+                : "bg-white border-gray-200 text-gray-700 hover:bg-muted/50"
+            )}>
+              <div className="flex items-center justify-center gap-2">
+                {showKey && bsData.kunciJawaban === true && (
+                  <CheckCircle className="w-5 h-5 text-green-600" weight="fill" />
+                )}
+                <span>Benar</span>
+              </div>
+            </div>
+            <div className={cn(
+              "flex-1 p-4 rounded-lg border-2 text-center font-semibold transition-colors cursor-default",
+              showKey && bsData.kunciJawaban === false
+                ? "bg-green-50 border-green-400 text-green-700 ring-2 ring-green-200"
+                : "bg-white border-gray-200 text-gray-700 hover:bg-muted/50"
+            )}>
+              <div className="flex items-center justify-center gap-2">
+                {showKey && bsData.kunciJawaban === false && (
+                  <CheckCircle className="w-5 h-5 text-green-600" weight="fill" />
+                )}
+                <span>Salah</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    case 'PENCOCOKAN': {
+      const pencocokanData = data as PencocokanData;
+      const jawabanEntries = Object.entries(pencocokanData.jawaban || {});
+      return (
+        <div className="space-y-3">
+          {/* Student view: two columns with items to match */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Left column */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Kolom Kiri</p>
+              {pencocokanData.itemKiri?.map((item, idx) => (
+                <div key={item.id} className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-xs font-bold">
+                      {idx + 1}
+                    </span>
+                    <MathRenderer content={item.text || ""} className="text-sm text-gray-900" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Right column */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Kolom Kanan</p>
+              {pencocokanData.itemKanan?.map((item, idx) => (
+                <div key={item.id} className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-orange-200 text-orange-800 flex items-center justify-center text-xs font-bold">
+                      {String.fromCharCode(65 + idx)}
+                    </span>
+                    <MathRenderer content={item.text || ""} className="text-sm text-gray-900" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Answer key: show connections */}
+          {showKey && jawabanEntries.length > 0 && (
+            <div className="p-3 bg-green-50 border border-green-300 rounded-lg">
+              <div className="flex items-center gap-1.5 mb-2">
+                <CheckCircle className="w-4 h-4 text-green-600" weight="fill" />
+                <p className="text-xs font-semibold text-green-700">Kunci Jawaban (Pasangan Benar)</p>
+              </div>
+              <div className="space-y-1.5">
+                {jawabanEntries.map(([kiriId, kananId]) => {
+                  const kiriItem = pencocokanData.itemKiri?.find(i => i.id === kiriId);
+                  const kananItem = pencocokanData.itemKanan?.find(i => i.id === kananId);
+                  const kiriIdx = pencocokanData.itemKiri?.findIndex(i => i.id === kiriId) ?? -1;
+                  const kananIdx = pencocokanData.itemKanan?.findIndex(i => i.id === kananId) ?? -1;
+                  if (!kiriItem || !kananItem) return null;
+                  return (
+                    <div key={kiriId} className="flex items-center gap-2 text-sm">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-xs font-bold">
+                        {kiriIdx + 1}
+                      </span>
+                      <ArrowsLeftRight className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-orange-200 text-orange-800 flex items-center justify-center text-xs font-bold">
+                        {String.fromCharCode(65 + kananIdx)}
+                      </span>
+                      <span className="text-green-800 text-xs truncate">
+                        {kiriItem.text?.replace(/<[^>]*>/g, '').slice(0, 30)} → {kananItem.text?.replace(/<[^>]*>/g, '').slice(0, 30)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {jawabanEntries.length === 0 && pencocokanData.itemKiri?.length > 0 && (
+            <p className="text-sm text-muted-foreground italic">Belum ada koneksi jawaban yang ditentukan</p>
+          )}
+        </div>
+      );
+    }
+
+    default:
+      return <p className="text-sm text-muted-foreground">Tipe soal tidak dikenali</p>;
+  }
+}
+
 export default function UjianDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { isLoading: authLoading } = useAuth();
+  const [showAnswerKey, setShowAnswerKey] = useState(true);
 
   const { data, error, isLoading } = useSWR(
     params.id ? `/api/guru/ujian/${params.id}` : null,
@@ -49,146 +290,219 @@ export default function UjianDetailPage() {
   }
 
   const ujian = data.data.ujian;
-  const soalPG = data.data.soalPG || [];
-  const soalEssay = data.data.soalEssay || [];
+  const soalList = data.data.soal || [];
+  const totalPoin = soalList.reduce((sum: number, s: any) => sum + (s.poin || 0), 0);
+  const durationMinutes = Math.round((new Date(ujian.endUjian).getTime() - new Date(ujian.startUjian).getTime()) / 60000);
+
+  // Count soal by type
+  const soalByType: Record<string, number> = {};
+  soalList.forEach((s: any) => {
+    soalByType[s.tipe] = (soalByType[s.tipe] || 0) + 1;
+  });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => router.push("/guru/ujian")}
-        >
-          <ArrowLeft className="w-5 h-5" weight="bold" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">{ujian.judul}</h1>
-          <p className="text-muted-foreground">
-            {ujian.kelas.join(", ")} • {ujian.mapel} • {format(new Date(ujian.startUjian), "dd MMMM yyyy HH:mm", { locale: id })} - {format(new Date(ujian.endUjian), "dd MMMM yyyy HH:mm", { locale: id })} • {Math.round((new Date(ujian.endUjian).getTime() - new Date(ujian.startUjian).getTime()) / 60000)} menit
-          </p>
-        </div>
-      </div>
-
-      <Card className="bg-gradient-to-br from-[#0221CD] to-[#0221CD]/80 border-0 shadow-lg">
-        <CardHeader>
-          <CardTitle className="text-xl text-white">Informasi Ujian</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push("/guru/ujian")}
+          >
+            <ArrowLeft className="w-5 h-5" weight="bold" />
+          </Button>
           <div>
-            <p className="text-sm font-semibold text-blue-50 mb-2">Deskripsi</p>
-            {ujian.deskripsi ? (
-              <div className="p-4 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
-                <MathRenderer content={ujian.deskripsi} className="text-sm leading-relaxed text-white" />
-              </div>
-            ) : (
-              <div className="p-4 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
-                <p className="text-sm text-blue-50">Tidak ada deskripsi</p>
-              </div>
-            )}
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-white/20">
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-              <p className="text-sm font-semibold text-blue-50 mb-2">Status</p>
-              <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
-                ujian.status === "aktif" ? "bg-green-100 text-green-700 border border-green-200" :
-                ujian.status === "draft" ? "bg-orange-100 text-orange-700 border border-orange-200" :
-                "bg-gray-100 text-gray-700 border border-gray-200"
-              }`}>
+            <h1 className="text-2xl sm:text-3xl font-bold">{ujian.judul}</h1>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground mt-1">
+              <Badge variant="outline" className="text-xs">{ujian.mapel}</Badge>
+              <span>{ujian.kelas.join(", ")}</span>
+              <span className={cn(
+                "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
+                ujian.status === "aktif" && "bg-green-100 text-green-700",
+                ujian.status === "draft" && "bg-orange-100 text-orange-700",
+                ujian.status === "selesai" && "bg-gray-100 text-gray-700"
+              )}>
                 {ujian.status === "aktif" ? "Aktif" : ujian.status === "draft" ? "Draft" : "Selesai"}
               </span>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-              <p className="text-sm font-semibold text-blue-50 mb-2">Total Soal</p>
-              <p className="text-2xl font-bold text-white">{soalPG.length + soalEssay.length}</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-              <p className="text-sm font-semibold text-blue-50 mb-2">Acak Soal</p>
-              <p className="text-lg font-medium text-white">{ujian.shuffleQuestions ? "Ya" : "Tidak"}</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-              <p className="text-sm font-semibold text-blue-50 mb-2">Tampilkan Nilai</p>
-              <p className="text-lg font-medium text-white">{ujian.showScore ? "Ya" : "Tidak"}</p>
-            </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="flex gap-2 ml-14 sm:ml-0">
+          <Button variant="outline" onClick={() => router.push(`/guru/ujian/${params.id}/print`)}>
+            <Printer className="w-4 h-4 mr-2" weight="duotone" />
+            Print
+          </Button>
+          <Button variant="outline" onClick={() => router.push(`/guru/ujian/${params.id}/nilai`)}>
+            <Exam className="w-4 h-4 mr-2" weight="duotone" />
+            Nilai
+          </Button>
+          <Button onClick={() => router.push(`/guru/ujian/${params.id}/edit`)}>
+            <PencilSimple className="w-4 h-4 mr-2" weight="bold" />
+            Edit
+          </Button>
+        </div>
+      </div>
 
-      {soalPG.length > 0 && (
-        <Card className="bg-white border shadow-lg">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <ListChecks className="w-5 h-5 text-gray-700" weight="duotone" />
-              <CardTitle className="text-gray-900">Soal Pilihan Ganda ({soalPG.length})</CardTitle>
+      {/* Stats Cards */}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+        <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-500 to-blue-600">
+          <CardContent className="p-4 md:p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs md:text-sm font-medium text-blue-100">Jadwal</p>
+                <p className="text-lg md:text-2xl font-bold text-white mt-1">
+                  {format(new Date(ujian.startUjian), "dd MMM", { locale: id })}
+                </p>
+                <p className="text-xs text-blue-100 mt-1">
+                  {format(new Date(ujian.startUjian), "HH:mm", { locale: id })} - {format(new Date(ujian.endUjian), "HH:mm", { locale: id })}
+                </p>
+              </div>
+              <div className="p-2 md:p-3 bg-white/20 rounded-lg hidden md:block">
+                <CalendarIcon className="w-6 h-6 text-white" />
+              </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-lg bg-gradient-to-br from-green-500 to-green-600">
+          <CardContent className="p-4 md:p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs md:text-sm font-medium text-green-100">Durasi</p>
+                <p className="text-2xl md:text-3xl font-bold text-white mt-1">{durationMinutes}</p>
+                <p className="text-xs text-green-100 mt-1">menit</p>
+              </div>
+              <div className="p-2 md:p-3 bg-white/20 rounded-lg hidden md:block">
+                <Clock className="w-6 h-6 text-white" weight="duotone" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-lg bg-gradient-to-br from-orange-500 to-orange-600">
+          <CardContent className="p-4 md:p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs md:text-sm font-medium text-orange-100">Total Soal</p>
+                <p className="text-2xl md:text-3xl font-bold text-white mt-1">{soalList.length}</p>
+                <p className="text-xs text-orange-100 mt-1 hidden md:block">
+                  {Object.entries(soalByType).map(([tipe, count]) => (
+                    `${count} ${TIPE_SOAL_LABELS[tipe as keyof typeof TIPE_SOAL_LABELS] || tipe}`
+                  )).join(" • ")}
+                </p>
+              </div>
+              <div className="p-2 md:p-3 bg-white/20 rounded-lg hidden md:block">
+                <ListChecks className="w-6 h-6 text-white" weight="duotone" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-lg bg-gradient-to-br from-purple-500 to-purple-600">
+          <CardContent className="p-4 md:p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs md:text-sm font-medium text-purple-100">Total Poin</p>
+                <p className="text-2xl md:text-3xl font-bold text-white mt-1">{totalPoin}</p>
+                <p className="text-xs text-purple-100 mt-1">
+                  ~{soalList.length > 0 ? Math.round(totalPoin / soalList.length) : 0} poin/soal
+                </p>
+              </div>
+              <div className="p-2 md:p-3 bg-white/20 rounded-lg hidden md:block">
+                <Exam className="w-6 h-6 text-white" weight="duotone" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Description */}
+      {ujian.deskripsi && (
+        <Card className="border shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-xs font-semibold text-muted-foreground mb-2">Deskripsi Ujian</p>
+            <MathRenderer content={ujian.deskripsi} className="text-sm leading-relaxed" />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Soal Preview - Student Style */}
+      {soalList.length > 0 ? (
+        <Card className="border shadow-lg">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Eye className="w-5 h-5 text-gray-700" weight="duotone" />
+                <CardTitle className="text-gray-900">Preview Soal</CardTitle>
+                <Badge variant="secondary" className="text-xs">{soalList.length} soal</Badge>
+              </div>
+              <Button
+                variant={showAnswerKey ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowAnswerKey(!showAnswerKey)}
+                className="gap-1.5"
+              >
+                {showAnswerKey ? (
+                  <>
+                    <EyeSlash className="w-4 h-4" weight="duotone" />
+                    Sembunyikan Kunci
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-4 h-4" weight="duotone" />
+                    Tampilkan Kunci
+                  </>
+                )}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Tampilan ini sama persis dengan yang dilihat siswa saat ujian
+            </p>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {soalPG.map((soal: any) => (
-              <div key={soal.id} className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center font-semibold text-sm border border-gray-300">
-                    {soal.nomor}
-                  </span>
-                  <div className="flex-1">
-                    <MathRenderer content={soal.pertanyaan || ""} className="font-medium text-gray-900" />
-                  </div>
-                </div>
-                <div className="ml-11 space-y-2">
-                  {['A', 'B', 'C', 'D'].map((option, idx) => (
-                    <div 
-                      key={option} 
-                      className={`p-3 rounded-lg border flex items-start gap-2 ${
-                        soal.kunciJawaban === option 
-                          ? 'bg-green-50 border-green-300' 
-                          : 'bg-white border-gray-200'
-                      }`}
-                    >
-                      <span className={`font-medium text-sm flex-shrink-0 ${
-                        soal.kunciJawaban === option ? 'text-green-700' : 'text-gray-700'
-                      }`}>{option}.</span>
-                      <div className="flex-1 flex items-center gap-2">
-                        <MathRenderer content={soal[`opsi${option}`] || ""} className={`text-sm ${
-                          soal.kunciJawaban === option ? 'text-gray-900' : 'text-gray-700'
-                        }`} />
-                        {soal.kunciJawaban === option && (
-                          <span className="text-xs text-green-600 font-semibold whitespace-nowrap">(Kunci Jawaban)</span>
-                        )}
+          <CardContent className="space-y-4">
+            {soalList.map((soal: any, index: number) => (
+              <div key={soal.id} className="rounded-xl border bg-white shadow-sm overflow-hidden">
+                <div className="p-4 sm:p-6 space-y-4">
+                  {/* Question header */}
+                  <div className="flex items-start gap-3">
+                    <span className="flex-shrink-0 w-9 h-9 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-sm">
+                      {soal.urutan || index + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge variant="outline" className="text-[10px] gap-1 px-1.5 py-0">
+                          {TIPE_ICON[soal.tipe]}
+                          {TIPE_SOAL_LABELS[soal.tipe as keyof typeof TIPE_SOAL_LABELS] || soal.tipe}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          {soal.poin || 0} poin
+                        </Badge>
                       </div>
+                      <MathRenderer content={soal.pertanyaan || "(Belum ada pertanyaan)"} className="text-sm sm:text-base text-gray-900" />
                     </div>
-                  ))}
+                  </div>
+                  {/* Answer area - student style */}
+                  <div className="ml-12">
+                    <SoalStudentPreview soal={soal} showKey={showAnswerKey} />
+                  </div>
                 </div>
               </div>
             ))}
           </CardContent>
         </Card>
-      )}
-
-      {soalEssay.length > 0 && (
-        <Card className="bg-white border shadow-lg">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Article className="w-5 h-5 text-gray-700" weight="duotone" />
-              <CardTitle className="text-gray-900">Soal Essay ({soalEssay.length})</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {soalEssay.map((soal: any) => (
-              <div key={soal.id} className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center font-semibold text-sm border border-gray-300">
-                    {soal.nomor}
-                  </span>
-                  <div className="flex-1">
-                    <MathRenderer content={soal.pertanyaan || ""} className="font-medium text-gray-900" />
-                  </div>
-                </div>
-                <div className="ml-11 p-3 bg-green-50 border border-green-200 rounded">
-                  <p className="text-xs font-semibold text-green-700 mb-1">Kunci Jawaban:</p>
-                  <MathRenderer content={soal.kunciJawaban || ""} className="text-sm text-green-900" />
-                </div>
-              </div>
-            ))}
+      ) : (
+        <Card className="border shadow-lg">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <ListChecks className="w-16 h-16 text-muted-foreground mb-4" weight="duotone" />
+            <h3 className="text-lg font-semibold mb-2">Belum ada soal</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              Tambahkan soal melalui halaman edit ujian
+            </p>
+            <Button onClick={() => router.push(`/guru/ujian/${params.id}/edit`)}>
+              <PencilSimple className="w-4 h-4 mr-2" weight="bold" />
+              Edit & Tambah Soal
+            </Button>
           </CardContent>
         </Card>
       )}

@@ -2,15 +2,14 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { refreshSession } from '@/lib/session';
 import { rateLimiters } from '@/lib/rate-limit';
+import { autoGradeSoal, TipeSoal, SoalData, JawabanData } from '@/types/soal';
+
+const MANUAL_GRADE_TYPES = ['ESSAY'];
+const PARTIAL_SCORE_TYPES = ['PENCOCOKAN'];
 
 /**
- * API endpoint untuk auto-save jawaban (bukan submit final)
- * Enhanced dengan:
- * - Transaction untuk data consistency
- * - Comprehensive validation
- * - Better error handling
- * - Detailed logging
- * - Rate limiting (1 request per 2 seconds per question per student)
+ * Auto-save single answer (unified Soal + JawabanSoal model)
+ * Rate limited: 1 request per 2 seconds per question per student
  */
 export async function POST(
   request: Request,
@@ -18,7 +17,6 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    // Use refreshSession to keep session alive during exam (rolling session)
     const session = await refreshSession();
 
     if (!session.isLoggedIn || session.role !== 'SISWA') {
@@ -40,12 +38,12 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { questionId, questionType, answer, timestamp } = body;
+    const { questionId, answer, timestamp } = body;
 
-    // Rate limiting: 1 request per 2 seconds per question per student
+    // Rate limiting
     const rateLimitKey = `${siswa.id}-${questionId}`;
     const isAllowed = rateLimiters.saveAnswer.check(rateLimitKey);
-    
+
     if (!isAllowed) {
       return NextResponse.json(
         { success: false, message: 'Terlalu banyak request. Tunggu 2 detik.' },
@@ -53,27 +51,18 @@ export async function POST(
       );
     }
 
-    // Validate input
-    if (!questionId || !questionType || answer === undefined) {
+    if (!questionId || answer === undefined) {
       return NextResponse.json(
         { success: false, message: 'Data tidak lengkap' },
         { status: 400 }
       );
     }
 
-    if (!['multiple_choice', 'essay'].includes(questionType)) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid question type' },
-        { status: 400 }
-      );
-    }
-
-    // Check if ujian exists
+    // Get ujian with soal
     const ujian = await prisma.ujian.findFirst({
       where: { id },
       include: {
-        soalPilihanGanda: true,
-        soalEssay: true,
+        soal: true,
       },
     });
 
@@ -86,56 +75,37 @@ export async function POST(
 
     // Validate time
     const now = new Date();
-    const examEndTime = new Date(ujian.endUjian);
-    const examStartTime = new Date(ujian.startUjian);
-
-    if (now > examEndTime) {
+    if (now > new Date(ujian.endUjian)) {
       return NextResponse.json(
-        { success: false, message: 'Waktu ujian telah berakhir. Jawaban tidak dapat disimpan.' },
+        { success: false, message: 'Waktu ujian telah berakhir.' },
         { status: 403 }
       );
     }
-
-    if (now < examStartTime) {
+    if (now < new Date(ujian.startUjian)) {
       return NextResponse.json(
         { success: false, message: 'Ujian belum dimulai' },
         { status: 403 }
       );
     }
 
-    // Validate question exists and belongs to this exam
-    let soal: any = null;
-    let soalType = '';
-
-    if (questionType === 'multiple_choice') {
-      soal = ujian.soalPilihanGanda.find((s) => s.id === questionId);
-      soalType = 'PG';
-    } else {
-      soal = ujian.soalEssay.find((s) => s.id === questionId);
-      soalType = 'ESSAY';
-    }
-
+    // Find the soal
+    const soal = ujian.soal.find((s) => s.id === questionId);
     if (!soal) {
       return NextResponse.json(
-        { success: false, message: `Soal ${questionId} tidak ditemukan atau tipe soal salah` },
+        { success: false, message: `Soal ${questionId} tidak ditemukan` },
         { status: 404 }
       );
     }
 
-    // Use transaction for data consistency
     const result = await prisma.$transaction(async (tx) => {
       // Get or create submission
       let submission = await tx.ujianSubmission.findUnique({
         where: {
-          ujianId_siswaId: {
-            ujianId: id,
-            siswaId: siswa.id,
-          },
+          ujianId_siswaId: { ujianId: id, siswaId: siswa.id },
         },
       });
 
       if (!submission) {
-        // Create draft submission
         submission = await tx.ujianSubmission.create({
           data: {
             ujianId: id,
@@ -146,73 +116,61 @@ export async function POST(
         });
       }
 
-      // Check if already submitted
       if (submission.submittedAt) {
         throw new Error('Ujian sudah dikumpulkan, tidak bisa mengubah jawaban');
       }
 
-      // Save answer based on type
-      if (soalType === 'PG') {
-        const isCorrect = answer === soal.jawabanBenar;
+      // Auto-grade if not manual type
+      const isManual = MANUAL_GRADE_TYPES.includes(soal.tipe);
+      const isPartial = PARTIAL_SCORE_TYPES.includes(soal.tipe);
+      const jawabanData = typeof answer === 'object' ? answer : { jawaban: answer };
 
-        const existingAnswer = await tx.jawabanPilihanGanda.findUnique({
-          where: {
-            submissionId_soalId: {
-              submissionId: submission.id,
-              soalId: questionId,
-            },
-          },
-        });
+      let isCorrect: boolean | null = null;
+      let nilai: number | null = null;
 
-        if (existingAnswer) {
-          await tx.jawabanPilihanGanda.update({
-            where: { id: existingAnswer.id },
-            data: { jawaban: answer, isCorrect },
-          });
-        } else {
-          await tx.jawabanPilihanGanda.create({
-            data: {
-              submissionId: submission.id,
-              soalId: questionId,
-              jawaban: answer,
-              isCorrect,
-            },
-          });
-        }
-
-        return { type: 'PG', isCorrect, submissionId: submission.id };
-      } else {
-        const existingAnswer = await tx.jawabanEssay.findUnique({
-          where: {
-            submissionId_soalId: {
-              submissionId: submission.id,
-              soalId: questionId,
-            },
-          },
-        });
-
-        if (existingAnswer) {
-          await tx.jawabanEssay.update({
-            where: { id: existingAnswer.id },
-            data: { jawaban: answer },
-          });
-        } else {
-          await tx.jawabanEssay.create({
-            data: {
-              submissionId: submission.id,
-              soalId: questionId,
-              jawaban: answer,
-            },
-          });
-        }
-
-        return { type: 'ESSAY', submissionId: submission.id };
+      if (!isManual && answer !== '' && answer !== null) {
+        const gradeResult = autoGradeSoal(
+          soal.tipe as TipeSoal,
+          soal.data as unknown as SoalData,
+          jawabanData as JawabanData
+        );
+        isCorrect = gradeResult.isCorrect;
+        nilai = isPartial ? gradeResult.nilai : (gradeResult.isCorrect ? 100 : 0);
       }
+
+      // Upsert jawaban
+      const existingAnswer = await tx.jawabanSoal.findUnique({
+        where: {
+          submissionId_soalId: {
+            submissionId: submission.id,
+            soalId: questionId,
+          },
+        },
+      });
+
+      if (existingAnswer) {
+        await tx.jawabanSoal.update({
+          where: { id: existingAnswer.id },
+          data: { jawaban: jawabanData, isCorrect, nilai },
+        });
+      } else {
+        await tx.jawabanSoal.create({
+          data: {
+            submissionId: submission.id,
+            soalId: questionId,
+            jawaban: jawabanData,
+            isCorrect,
+            nilai,
+          },
+        });
+      }
+
+      return { submissionId: submission.id, isCorrect, nilai };
     });
 
     return NextResponse.json({
       success: true,
-      message: '✅ Jawaban berhasil disimpan',
+      message: 'Jawaban berhasil disimpan',
       data: {
         questionId,
         savedAt: new Date().toISOString(),
@@ -220,8 +178,7 @@ export async function POST(
       },
     });
   } catch (error: any) {
-    console.error('[SAVE ANSWER ERROR]', error);
-
+    console.error('[SAVE ANSWER ERROR]', error.message);
     return NextResponse.json(
       { success: false, message: error.message || 'Gagal menyimpan jawaban' },
       { status: 500 }
@@ -230,7 +187,7 @@ export async function POST(
 }
 
 /**
- * Batch save untuk multiple PG answers
+ * Batch save multiple answers (unified model)
  */
 export async function PUT(
   request: Request,
@@ -238,7 +195,6 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    // Use refreshSession to keep session alive during batch save (rolling session)
     const session = await refreshSession();
 
     if (!session.isLoggedIn || session.role !== 'SISWA') {
@@ -269,12 +225,9 @@ export async function PUT(
       );
     }
 
-    // Check if ujian exists
     const ujian = await prisma.ujian.findFirst({
       where: { id },
-      include: {
-        soalPilihanGanda: true,
-      },
+      include: { soal: true },
     });
 
     if (!ujian) {
@@ -284,19 +237,15 @@ export async function PUT(
       );
     }
 
-    // Check if exam time has passed
+    // Validate time
     const now = new Date();
-    const examEndTime = new Date(ujian.endUjian);
-    if (now > examEndTime) {
+    if (now > new Date(ujian.endUjian)) {
       return NextResponse.json(
-        { success: false, error: 'Waktu ujian telah berakhir. Jawaban tidak dapat disimpan.' },
+        { success: false, error: 'Waktu ujian telah berakhir.' },
         { status: 400 }
       );
     }
-
-    // Check if exam has started
-    const examStartTime = new Date(ujian.startUjian);
-    if (now < examStartTime) {
+    if (now < new Date(ujian.startUjian)) {
       return NextResponse.json(
         { success: false, error: 'Ujian belum dimulai' },
         { status: 400 }
@@ -305,10 +254,7 @@ export async function PUT(
 
     // Get or create submission
     let submission = await prisma.ujianSubmission.findFirst({
-      where: {
-        ujianId: id,
-        siswaId: siswa.id,
-      },
+      where: { ujianId: id, siswaId: siswa.id },
     });
 
     if (!submission) {
@@ -322,12 +268,29 @@ export async function PUT(
       });
     }
 
-    // Batch save PG answers
-    const savePromises = answers.map(async ({ questionId, answer }) => {
-      const soal = ujian.soalPilihanGanda.find((s) => s.id === questionId);
+    // Batch save using unified JawabanSoal
+    const savePromises = answers.map(async ({ questionId, answer }: { questionId: string; answer: any }) => {
+      const soal = ujian.soal.find((s) => s.id === questionId);
       if (!soal) return null;
 
-      const existingAnswer = await prisma.jawabanPilihanGanda.findUnique({
+      const isManual = MANUAL_GRADE_TYPES.includes(soal.tipe);
+      const isPartial = PARTIAL_SCORE_TYPES.includes(soal.tipe);
+      const jawabanData = typeof answer === 'object' ? answer : { jawaban: answer };
+
+      let isCorrect: boolean | null = null;
+      let nilai: number | null = null;
+
+      if (!isManual && answer !== '' && answer !== null) {
+        const gradeResult = autoGradeSoal(
+          soal.tipe as TipeSoal,
+          soal.data as unknown as SoalData,
+          jawabanData as JawabanData
+        );
+        isCorrect = gradeResult.isCorrect;
+        nilai = isPartial ? gradeResult.nilai : (gradeResult.isCorrect ? 100 : 0);
+      }
+
+      const existingAnswer = await prisma.jawabanSoal.findUnique({
         where: {
           submissionId_soalId: {
             submissionId: submission.id,
@@ -337,20 +300,18 @@ export async function PUT(
       });
 
       if (existingAnswer) {
-        return prisma.jawabanPilihanGanda.update({
+        return prisma.jawabanSoal.update({
           where: { id: existingAnswer.id },
-          data: {
-            jawaban: answer,
-            isCorrect: answer === soal.jawabanBenar,
-          },
+          data: { jawaban: jawabanData, isCorrect, nilai },
         });
       } else {
-        return prisma.jawabanPilihanGanda.create({
+        return prisma.jawabanSoal.create({
           data: {
             submissionId: submission.id,
             soalId: questionId,
-            jawaban: answer,
-            isCorrect: answer === soal.jawabanBenar,
+            jawaban: jawabanData,
+            isCorrect,
+            nilai,
           },
         });
       }
@@ -373,4 +334,3 @@ export async function PUT(
     );
   }
 }
-

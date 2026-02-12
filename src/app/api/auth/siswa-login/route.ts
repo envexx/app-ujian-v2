@@ -9,13 +9,13 @@ export async function POST(request: NextRequest) {
 
     if (!nisn) {
       return NextResponse.json(
-        { success: false, error: 'NISN harus diisi' },
+        { success: false, error: 'NISN/NIS harus diisi' },
         { status: 400 }
       );
     }
 
-    // Find siswa by NISN
-    const siswa = await prisma.siswa.findUnique({
+    // Find siswa by NISN first, then try NIS
+    let siswa = await prisma.siswa.findUnique({
       where: { nisn },
       include: {
         user: true,
@@ -23,9 +23,19 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    if (!siswa) {
+      siswa = await prisma.siswa.findUnique({
+        where: { nis: nisn },
+        include: {
+          user: true,
+          kelas: true,
+        },
+      });
+    }
+
     if (!siswa || !siswa.user) {
       return NextResponse.json(
-        { success: false, error: 'NISN tidak ditemukan' },
+        { success: false, error: 'NISN/NIS tidak ditemukan' },
         { status: 401 }
       );
     }

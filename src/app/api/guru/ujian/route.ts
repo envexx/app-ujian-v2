@@ -45,8 +45,7 @@ export async function GET(request: Request) {
           mapel: true,
           _count: {
             select: {
-              soalPilihanGanda: true,
-              soalEssay: true,
+              soal: true,
               submissions: true,
             },
           },
@@ -98,8 +97,7 @@ export async function GET(request: Request) {
           shuffleQuestions: u.shuffleQuestions,
           showScore: u.showScore,
           status: u.status,
-          totalSoalPG: u._count.soalPilihanGanda,
-          totalSoalEssay: u._count.soalEssay,
+          totalSoal: u._count.soal,
           totalSubmissions: u._count.submissions,
           createdAt: u.createdAt,
         })),
@@ -143,9 +141,6 @@ export async function POST(request: Request) {
       endUjian,
       shuffleQuestions,
       showScore,
-      status,
-      soalPG,
-      soalEssay,
     } = body;
 
     // Validate startUjian and endUjian
@@ -185,55 +180,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validasi: Jika status aktif/publish, SEMUA soalPG harus valid dengan semua opsi (A-D) terisi
-    const finalStatus = status || 'draft';
-    const allSoalPG = soalPG || [];
-    
-    if (finalStatus === 'aktif') {
-      if (allSoalPG.length === 0) {
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: 'Tidak dapat mempublikasikan ujian. Soal Pilihan Ganda tidak boleh kosong untuk ujian aktif. Silakan tambahkan minimal 1 soal PG atau simpan sebagai draft terlebih dahulu.' 
-          },
-          { status: 400 }
-        );
-      }
-
-      // Cek apakah semua soal PG valid - untuk publish, SEMUA opsi (A, B, C, D) harus terisi
-      const invalidSoalPG = allSoalPG.filter((soal: any) => {
-        const hasQuestion = soal.pertanyaan && soal.pertanyaan.replace(/<[^>]*>/g, '').trim().length > 0;
-        // Untuk publish, semua opsi harus terisi
-        const allOptionsFilled = soal.opsiA && soal.opsiA.replace(/<[^>]*>/g, '').trim().length > 0 &&
-                                soal.opsiB && soal.opsiB.replace(/<[^>]*>/g, '').trim().length > 0 &&
-                                soal.opsiC && soal.opsiC.replace(/<[^>]*>/g, '').trim().length > 0 &&
-                                soal.opsiD && soal.opsiD.replace(/<[^>]*>/g, '').trim().length > 0;
-        return !(hasQuestion && allOptionsFilled);
-      });
-
-      if (invalidSoalPG.length > 0) {
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: `Tidak dapat mempublikasikan ujian. Terdapat ${invalidSoalPG.length} soal Pilihan Ganda yang belum lengkap. Semua opsi (A, B, C, D) harus diisi untuk publish.` 
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Filter soal yang valid untuk disimpan (untuk draft, minimal 1 opsi terisi)
-    const validSoalPG = allSoalPG.filter((soal: any) => {
-      const hasQuestion = soal.pertanyaan && soal.pertanyaan.replace(/<[^>]*>/g, '').trim().length > 0;
-      // Untuk draft, minimal 1 opsi terisi
-      const hasOptions = (soal.opsiA && soal.opsiA.replace(/<[^>]*>/g, '').trim().length > 0) ||
-                        (soal.opsiB && soal.opsiB.replace(/<[^>]*>/g, '').trim().length > 0) ||
-                        (soal.opsiC && soal.opsiC.replace(/<[^>]*>/g, '').trim().length > 0) ||
-                        (soal.opsiD && soal.opsiD.replace(/<[^>]*>/g, '').trim().length > 0);
-      return hasQuestion && hasOptions;
-    });
-
-    // Create ujian with soal
+    // Create ujian as draft (soal ditambahkan di halaman edit)
     const ujian = await prisma.ujian.create({
       data: {
         judul,
@@ -245,40 +192,16 @@ export async function POST(request: Request) {
         endUjian: endDate,
         shuffleQuestions: shuffleQuestions || false,
         showScore: showScore !== false,
-        status: finalStatus,
-        soalPilihanGanda: {
-          create: (finalStatus === 'aktif' ? allSoalPG : validSoalPG).map((soal: any, index: number) => ({
-            pertanyaan: soal.pertanyaan,
-            opsiA: soal.opsiA,
-            opsiB: soal.opsiB,
-            opsiC: soal.opsiC,
-            opsiD: soal.opsiD,
-            jawabanBenar: soal.kunciJawaban,
-            urutan: index + 1,
-          })),
-        },
-        soalEssay: {
-          create: soalEssay?.map((soal: any, index: number) => ({
-            pertanyaan: soal.pertanyaan,
-            kunciJawaban: soal.kunciJawaban,
-            urutan: index + 1,
-          })) || [],
-        },
+        status: 'draft', // Always create as draft, soal ditambahkan di edit page
       },
       include: {
         mapel: true,
-        soalPilihanGanda: true,
-        soalEssay: true,
       },
     });
 
     return NextResponse.json({
       success: true,
-      data: {
-        ujian,
-        totalSoalPG: ujian.soalPilihanGanda.length,
-        totalSoalEssay: ujian.soalEssay.length,
-      },
+      data: ujian,
       message: 'Ujian berhasil ditambahkan',
     });
   } catch (error) {
@@ -323,7 +246,7 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Validasi: Jika status diubah menjadi aktif, SEMUA soalPG harus valid
+    // Validasi: Jika status diubah menjadi aktif, harus ada minimal 1 soal
     if (status === 'aktif') {
       const existingUjian = await prisma.ujian.findFirst({
         where: {
@@ -331,7 +254,7 @@ export async function PUT(request: Request) {
           guruId: guru.id,
         },
         include: {
-          soalPilihanGanda: true,
+          soal: true,
         },
       });
 
@@ -342,32 +265,27 @@ export async function PUT(request: Request) {
         );
       }
 
-      if (existingUjian.soalPilihanGanda.length === 0) {
+      if (existingUjian.soal.length === 0) {
         return NextResponse.json(
           { 
             success: false, 
-            error: 'Tidak dapat mengaktifkan ujian. Soal Pilihan Ganda tidak boleh kosong untuk ujian aktif. Silakan tambahkan minimal 1 soal PG terlebih dahulu.' 
+            error: 'Tidak dapat mengaktifkan ujian. Minimal harus ada 1 soal. Silakan tambahkan soal terlebih dahulu.' 
           },
           { status: 400 }
         );
       }
 
-      // Cek apakah semua soal PG valid - untuk publish, SEMUA opsi (A, B, C, D) harus terisi
-      const invalidSoalPG = existingUjian.soalPilihanGanda.filter((soal) => {
+      // Cek apakah semua soal memiliki pertanyaan
+      const invalidSoal = existingUjian.soal.filter((soal) => {
         const hasQuestion = soal.pertanyaan && soal.pertanyaan.replace(/<[^>]*>/g, '').trim().length > 0;
-        // Untuk publish, semua opsi harus terisi
-        const allOptionsFilled = soal.opsiA && soal.opsiA.replace(/<[^>]*>/g, '').trim().length > 0 &&
-                                soal.opsiB && soal.opsiB.replace(/<[^>]*>/g, '').trim().length > 0 &&
-                                soal.opsiC && soal.opsiC.replace(/<[^>]*>/g, '').trim().length > 0 &&
-                                soal.opsiD && soal.opsiD.replace(/<[^>]*>/g, '').trim().length > 0;
-        return !(hasQuestion && allOptionsFilled);
+        return !hasQuestion;
       });
 
-      if (invalidSoalPG.length > 0) {
+      if (invalidSoal.length > 0) {
         return NextResponse.json(
           { 
             success: false, 
-            error: `Tidak dapat mengaktifkan ujian. Terdapat ${invalidSoalPG.length} soal Pilihan Ganda yang belum lengkap. Semua opsi (A, B, C, D) harus diisi untuk publish.` 
+            error: `Tidak dapat mengaktifkan ujian. Terdapat ${invalidSoal.length} soal yang belum memiliki pertanyaan.` 
           },
           { status: 400 }
         );

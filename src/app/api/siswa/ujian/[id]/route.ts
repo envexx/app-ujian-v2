@@ -1,6 +1,49 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { refreshSession } from '@/lib/session';
+import type { PilihanGandaData, PencocokanData } from '@/types/soal';
+
+/**
+ * SECURITY: Strip answer keys from soal data before sending to student.
+ * Each soal type has different fields that contain the answer.
+ */
+function sanitizeSoalData(tipe: string, data: any): any {
+  switch (tipe) {
+    case 'PILIHAN_GANDA': {
+      const pgData = data as PilihanGandaData;
+      return {
+        opsi: pgData.opsi, // Keep options, remove kunciJawaban
+      };
+    }
+    case 'ESSAY': {
+      return {
+        minKata: data.minKata,
+        maxKata: data.maxKata,
+        // Remove kunciJawaban
+      };
+    }
+    case 'ISIAN_SINGKAT': {
+      return {
+        caseSensitive: data.caseSensitive,
+        // Remove kunciJawaban
+      };
+    }
+    case 'PENCOCOKAN': {
+      const pencocokanData = data as PencocokanData;
+      return {
+        itemKiri: pencocokanData.itemKiri,
+        itemKanan: pencocokanData.itemKanan,
+        // Remove jawaban (the correct mapping)
+      };
+    }
+    case 'BENAR_SALAH': {
+      return {};
+      // Remove kunciJawaban — student just sees Benar/Salah buttons
+    }
+    default:
+      return {};
+  }
+}
 
 export async function GET(
   request: Request,
@@ -30,8 +73,7 @@ export async function GET(
       );
     }
 
-    // Get ujian detail
-    // SECURITY: Use select to prevent sending jawabanBenar to client
+    // Get ujian detail with unified soal model
     const ujian = await prisma.ujian.findFirst({
       where: {
         id,
@@ -40,26 +82,15 @@ export async function GET(
       },
       include: {
         mapel: true,
-        soalPilihanGanda: {
+        soal: {
           orderBy: { urutan: 'asc' },
           select: {
             id: true,
-            pertanyaan: true,
-            opsiA: true,
-            opsiB: true,
-            opsiC: true,
-            opsiD: true,
+            tipe: true,
             urutan: true,
-            // SECURITY: Don't send jawabanBenar and penjelasan to prevent cheating
-          },
-        },
-        soalEssay: {
-          orderBy: { urutan: 'asc' },
-          select: {
-            id: true,
             pertanyaan: true,
-            urutan: true,
-            // SECURITY: Don't send kunciJawaban to prevent cheating
+            poin: true,
+            data: true, // Will be sanitized before sending
           },
         },
         submissions: {
@@ -75,53 +106,25 @@ export async function GET(
       );
     }
 
-    // Check time validation - ujian hanya bisa diakses pada waktu yang ditentukan
-    // Menggunakan startUjian dan endUjian langsung dari database
+    // Check time validation
     const now = new Date();
     const examStartTime = new Date(ujian.startUjian);
     const examEndTime = new Date(ujian.endUjian);
-    
-    // Debug log untuk membantu troubleshooting
-    console.log('Time Check:', {
-      now: now.toString(),
-      nowLocal: now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }),
-      examStartTime: examStartTime.toString(),
-      examStartTimeLocal: examStartTime.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }),
-      examEndTime: examEndTime.toString(),
-      examEndTimeLocal: examEndTime.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }),
-      canStart: now >= examStartTime && now <= examEndTime,
-      comparison: {
-        nowVsExamStart: now >= examStartTime,
-        nowVsExamEnd: now <= examEndTime,
-      },
-    });
 
-    // Ujian hanya bisa dimulai jika:
-    // 1. Waktu saat ini >= waktu mulai ujian (startUjian)
-    // 2. Waktu saat ini <= waktu akhir ujian (endUjian)
-    // 3. Belum ada submission yang sudah di-submit
     const canStart = now >= examStartTime && now <= examEndTime && !ujian.submissions[0]?.submittedAt;
 
-    // Calculate remaining time
-    // Waktu tersisa dihitung dari endUjian - sekarang
-    // Tidak peduli kapan siswa mulai, waktu habis saat endUjian tercapai
-    let timeRemaining = 0; // in seconds
-    timeRemaining = Math.max(0, Math.floor((examEndTime.getTime() - now.getTime()) / 1000));
+    // Calculate remaining time in seconds
+    const timeRemaining = Math.max(0, Math.floor((examEndTime.getTime() - now.getTime()) / 1000));
 
     // Helper function to format date in Indonesian
     const formatDateIndonesian = (date: Date) => {
       const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
                      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-      const day = date.getDate();
-      const month = months[date.getMonth()];
-      const year = date.getFullYear();
-      return `${day} ${month} ${year}`;
+      return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
     };
 
     const formatTime = (date: Date) => {
-      const hours = date.getHours().toString().padStart(2, '0');
-      const minutes = date.getMinutes().toString().padStart(2, '0');
-      return `${hours}:${minutes}`;
+      return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
     };
 
     // Determine access status message
@@ -136,34 +139,16 @@ export async function GET(
       accessMessage = 'Ujian dapat diakses';
     }
 
-    // Prepare soal data
-    let soalPG = (ujian.soalPilihanGanda || []).map((s, idx) => ({
+    // SECURITY: Sanitize soal data — strip answer keys before sending to client
+    const soal = ujian.soal.map((s, idx) => ({
       id: s.id,
+      tipe: s.tipe,
+      urutan: s.urutan,
       nomor: idx + 1,
       pertanyaan: s.pertanyaan,
-      opsiA: s.opsiA,
-      opsiB: s.opsiB,
-      opsiC: s.opsiC,
-      opsiD: s.opsiD,
+      poin: s.poin,
+      data: sanitizeSoalData(s.tipe, s.data),
     }));
-
-    let soalEssay = (ujian.soalEssay || []).map((s, idx) => ({
-      id: s.id,
-      nomor: idx + 1,
-      pertanyaan: s.pertanyaan,
-    }));
-
-    // Debug log
-    console.log('API Response - Soal data:', {
-      soalPGCount: soalPG.length,
-      soalEssayCount: soalEssay.length,
-      soalPGFirst: soalPG[0],
-      soalEssayFirst: soalEssay[0],
-    });
-
-    // Shuffle questions if shuffleQuestions is enabled
-    // Note: Shuffle is done in frontend to ensure each student gets different order
-    // Backend only provides the shuffleQuestions flag
 
     return NextResponse.json({
       success: true,
@@ -175,17 +160,16 @@ export async function GET(
           mapel: ujian.mapel.nama,
           startUjian: ujian.startUjian,
           endUjian: ujian.endUjian,
-          shuffleQuestions: ujian.shuffleQuestions, // Include shuffleQuestions flag
-          totalSoal: ujian.soalPilihanGanda.length + ujian.soalEssay.length,
+          shuffleQuestions: ujian.shuffleQuestions,
+          totalSoal: ujian.soal.length,
         },
-        soalPG,
-        soalEssay,
+        soal,
         submission: ujian.submissions[0] || null,
         canStart,
-        timeRemaining, // Waktu tersisa dalam detik (dihitung dari endUjian - sekarang)
+        timeRemaining,
         examStartTime: examStartTime.toISOString(),
         examEndTime: examEndTime.toISOString(),
-        accessMessage, // Pesan status akses
+        accessMessage,
       },
     });
   } catch (error) {

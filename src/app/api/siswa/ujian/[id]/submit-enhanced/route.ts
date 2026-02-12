@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { refreshSession } from '@/lib/session';
+import { autoGradeSoal, TipeSoal, SoalData, JawabanData } from '@/types/soal';
+
+const MANUAL_GRADE_TYPES = ['ESSAY'];
+const PARTIAL_SCORE_TYPES = ['PENCOCOKAN'];
 
 /**
- * Enhanced Submit Endpoint
+ * Enhanced Submit Endpoint (unified Soal + JawabanSoal model)
  * Features:
  * - Transaction-based for data consistency
- * - Comprehensive validation
+ * - Auto-grading with partial scoring for Pencocokan
  * - Checksum verification
- * - Detailed logging
  * - All questions saved (including unanswered)
  */
 export async function POST(
@@ -16,13 +19,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const startTime = Date.now();
-  
+
   try {
     const { id: ujianId } = await params;
-    // Use refreshSession to keep session alive during enhanced submit (rolling session)
     const session = await refreshSession();
 
-    // Validate session
     if (!session.isLoggedIn || session.role !== 'SISWA') {
       return NextResponse.json(
         { success: false, message: 'Unauthorized' },
@@ -30,7 +31,6 @@ export async function POST(
       );
     }
 
-    // Get siswa
     const siswa = await prisma.siswa.findFirst({
       where: { userId: session.userId },
     });
@@ -42,24 +42,21 @@ export async function POST(
       );
     }
 
-    // Parse body
     const body = await request.json();
-    const { answers, checksum, totalQuestions, submittedAt } = body;
+    const { answers, checksum, submittedAt } = body;
 
-    // Validate input
     if (!answers || typeof answers !== 'object') {
       return NextResponse.json(
-        { success: false, message: '❌ Tidak ada jawaban yang dikirim' },
+        { success: false, message: 'Tidak ada jawaban yang dikirim' },
         { status: 400 }
       );
     }
 
-    // Get ujian with all questions
+    // Get ujian with unified soal
     const ujian = await prisma.ujian.findUnique({
       where: { id: ujianId },
       include: {
-        soalPilihanGanda: { orderBy: { urutan: 'asc' } },
-        soalEssay: { orderBy: { urutan: 'asc' } },
+        soal: { orderBy: { urutan: 'asc' } },
       },
     });
 
@@ -70,15 +67,11 @@ export async function POST(
       );
     }
 
-    const expectedTotalSoal = ujian.soalPilihanGanda.length + ujian.soalEssay.length;
-
     // Validate time
     const now = new Date();
-    const examEndTime = new Date(ujian.endUjian);
-
-    if (now > examEndTime) {
+    if (now > new Date(ujian.endUjian)) {
       return NextResponse.json(
-        { success: false, message: '❌ Waktu ujian sudah berakhir' },
+        { success: false, message: 'Waktu ujian sudah berakhir' },
         { status: 403 }
       );
     }
@@ -87,57 +80,93 @@ export async function POST(
     if (checksum) {
       const expectedChecksum = generateChecksum(answers);
       if (checksum !== expectedChecksum) {
-        console.warn('[SUBMIT] Checksum mismatch', {
-          expected: expectedChecksum,
-          received: checksum,
-        });
-        // Don't block submission, just log warning
+        console.warn('[SUBMIT] Checksum mismatch', { expected: expectedChecksum, received: checksum });
       }
     }
+
+    const hasManual = ujian.soal.some(s => MANUAL_GRADE_TYPES.includes(s.tipe));
 
     // Use transaction for atomic operation
     const result = await prisma.$transaction(async (tx) => {
       // Get or create submission
       let submission = await tx.ujianSubmission.findUnique({
         where: {
-          ujianId_siswaId: {
-            ujianId,
-            siswaId: siswa.id,
-          },
+          ujianId_siswaId: { ujianId, siswaId: siswa.id },
         },
-        include: {
-          jawabanPilihanGanda: true,
-          jawabanEssay: true,
-        },
+        include: { jawabanSoal: true },
       });
 
-      // Check if already submitted
       if (submission?.submittedAt) {
         throw new Error('Ujian sudah pernah dikumpulkan');
       }
 
-      // Calculate PG score
-      let correctPG = 0;
-      const totalPG = ujian.soalPilihanGanda.length;
+      // Auto-grade and prepare all answers
+      let totalPoin = 0;
+      let earnedPoin = 0;
 
-      ujian.soalPilihanGanda.forEach((soal) => {
+      const gradedAnswers: {
+        soalId: string;
+        jawaban: any;
+        isCorrect: boolean | null;
+        nilai: number | null;
+      }[] = [];
+
+      for (const soal of ujian.soal) {
         const userAnswer = answers[soal.id];
-        if (userAnswer && userAnswer === soal.jawabanBenar) {
-          correctPG++;
+        const isManual = MANUAL_GRADE_TYPES.includes(soal.tipe);
+        const isPartial = PARTIAL_SCORE_TYPES.includes(soal.tipe);
+
+        totalPoin += soal.poin;
+
+        if (isManual) {
+          // userAnswer may already be { jawaban: "text" } from frontend
+          const jawabanManual = userAnswer
+            ? (typeof userAnswer === 'object' ? userAnswer : { jawaban: userAnswer })
+            : { jawaban: '' };
+          gradedAnswers.push({
+            soalId: soal.id,
+            jawaban: jawabanManual,
+            isCorrect: null,
+            nilai: null,
+          });
+        } else if (userAnswer !== undefined && userAnswer !== null && userAnswer !== '') {
+          const jawabanData = typeof userAnswer === 'object' ? userAnswer : { jawaban: userAnswer };
+          const gradeResult = autoGradeSoal(
+            soal.tipe as TipeSoal,
+            soal.data as unknown as SoalData,
+            jawabanData as JawabanData
+          );
+
+          if (isPartial) {
+            earnedPoin += Math.round(gradeResult.score * soal.poin);
+            gradedAnswers.push({
+              soalId: soal.id,
+              jawaban: jawabanData,
+              isCorrect: gradeResult.isCorrect,
+              nilai: gradeResult.nilai,
+            });
+          } else {
+            if (gradeResult.isCorrect) earnedPoin += soal.poin;
+            gradedAnswers.push({
+              soalId: soal.id,
+              jawaban: jawabanData,
+              isCorrect: gradeResult.isCorrect,
+              nilai: gradeResult.isCorrect ? 100 : 0,
+            });
+          }
+        } else {
+          gradedAnswers.push({
+            soalId: soal.id,
+            jawaban: { jawaban: '' },
+            isCorrect: false,
+            nilai: 0,
+          });
         }
-      });
-
-      // Determine final score
-      const totalEssay = ujian.soalEssay.length;
-      const hasEssay = totalEssay > 0;
-
-      let nilaiPG = 0;
-      if (totalPG > 0) {
-        nilaiPG = Math.round((correctPG / totalPG) * 100);
       }
 
-      const nilaiAkhir = hasEssay ? null : nilaiPG;
-      const statusSubmission = hasEssay ? 'pending' : 'completed';
+      // Direct sum — no percentage conversion. Total poin = 100, so earned = final score.
+      const finalScore = hasManual ? null : earnedPoin;
+      const statusSubmission = hasManual ? 'pending' : 'completed';
 
       // Create or update submission
       if (!submission) {
@@ -147,149 +176,88 @@ export async function POST(
             siswaId: siswa.id,
             startedAt: submittedAt ? new Date(submittedAt) : new Date(),
             submittedAt: new Date(),
-            nilai: nilaiAkhir,
+            nilai: finalScore,
             status: statusSubmission,
           },
-          include: {
-            jawabanPilihanGanda: true,
-            jawabanEssay: true,
-          },
+          include: { jawabanSoal: true },
         });
       } else {
         submission = await tx.ujianSubmission.update({
           where: { id: submission.id },
           data: {
             submittedAt: new Date(),
-            nilai: nilaiAkhir,
+            nilai: finalScore,
             status: statusSubmission,
           },
-          include: {
-            jawabanPilihanGanda: true,
-            jawabanEssay: true,
-          },
+          include: { jawabanSoal: true },
         });
       }
 
-      // Save ALL PG answers (including unanswered)
-      const pgResults = [];
-      for (const soal of ujian.soalPilihanGanda) {
-        const userAnswer = answers[soal.id] || '';
-        const isCorrect = userAnswer ? userAnswer === soal.jawabanBenar : false;
+      // Save all answers using unified JawabanSoal
+      let created = 0;
+      let updated = 0;
 
-        const existingAnswer = submission.jawabanPilihanGanda.find(
-          (j) => j.soalId === soal.id
-        );
+      for (const graded of gradedAnswers) {
+        const existing = submission.jawabanSoal.find(j => j.soalId === graded.soalId);
 
-        if (existingAnswer) {
-          const updated = await tx.jawabanPilihanGanda.update({
-            where: { id: existingAnswer.id },
-            data: { jawaban: userAnswer, isCorrect },
-          });
-          pgResults.push({ soalId: soal.id, status: 'updated', result: updated });
-        } else {
-          const created = await tx.jawabanPilihanGanda.create({
+        if (existing) {
+          await tx.jawabanSoal.update({
+            where: { id: existing.id },
             data: {
-              submissionId: submission.id,
-              soalId: soal.id,
-              jawaban: userAnswer,
-              isCorrect,
+              jawaban: graded.jawaban,
+              isCorrect: graded.isCorrect,
+              nilai: graded.nilai,
             },
           });
-          pgResults.push({ soalId: soal.id, status: 'created', result: created });
-        }
-      }
-
-      // Save ALL Essay answers (including unanswered)
-      const essayResults = [];
-      for (const soal of ujian.soalEssay) {
-        const userAnswer = answers[soal.id] || '';
-
-        const existingAnswer = submission.jawabanEssay.find(
-          (j) => j.soalId === soal.id
-        );
-
-        if (existingAnswer) {
-          const updated = await tx.jawabanEssay.update({
-            where: { id: existingAnswer.id },
-            data: { jawaban: userAnswer },
-          });
-          essayResults.push({ soalId: soal.id, status: 'updated', result: updated });
+          updated++;
         } else {
-          const created = await tx.jawabanEssay.create({
+          await tx.jawabanSoal.create({
             data: {
               submissionId: submission.id,
-              soalId: soal.id,
-              jawaban: userAnswer,
+              soalId: graded.soalId,
+              jawaban: graded.jawaban,
+              isCorrect: graded.isCorrect,
+              nilai: graded.nilai,
             },
           });
-          essayResults.push({ soalId: soal.id, status: 'created', result: created });
+          created++;
         }
       }
 
       return {
         submission,
-        pgResults,
-        essayResults,
-        nilaiAkhir,
-        correctPG,
-        totalPG,
-        totalEssay,
-        stats: {
-          pgSaved: pgResults.length,
-          essaySaved: essayResults.length,
-          pgCreated: pgResults.filter((r) => r.status === 'created').length,
-          pgUpdated: pgResults.filter((r) => r.status === 'updated').length,
-          essayCreated: essayResults.filter((r) => r.status === 'created').length,
-          essayUpdated: essayResults.filter((r) => r.status === 'updated').length,
-        },
+        finalScore,
+        totalSoal: ujian.soal.length,
+        stats: { created, updated, total: created + updated },
       };
     });
 
-    // Log success
     const duration = Date.now() - startTime;
     console.log('[SUBMIT SUCCESS]', {
       ujianId,
       siswaId: siswa.id,
       duration: `${duration}ms`,
-      totalSoalPG: result.totalPG,
-      totalSoalEssay: result.totalEssay,
-      pgSaved: result.stats.pgSaved,
-      essaySaved: result.stats.essaySaved,
-      nilaiPG: result.nilaiAkhir,
+      totalSoal: result.totalSoal,
+      saved: result.stats.total,
+      score: result.finalScore,
     });
 
-    // Return success response
     return NextResponse.json({
       success: true,
-      message: `✅ Ujian berhasil dikumpulkan. Total ${result.stats.pgSaved + result.stats.essaySaved} soal tersimpan`,
+      message: `Ujian berhasil dikumpulkan. ${result.stats.total} soal tersimpan`,
       data: {
         submission: result.submission,
-        score: result.nilaiAkhir,
-        correctPG: result.correctPG,
-        totalPG: result.totalPG,
-        totalEssay: result.totalEssay,
-        pgSaved: result.stats.pgSaved,
-        essaySaved: result.stats.essaySaved,
-        pgCreated: result.stats.pgCreated,
-        pgUpdated: result.stats.pgUpdated,
-        essayCreated: result.stats.essayCreated,
-        essayUpdated: result.stats.essayUpdated,
+        score: result.finalScore,
+        totalSoal: result.totalSoal,
+        totalSaved: result.stats.total,
       },
     });
   } catch (error: any) {
     const duration = Date.now() - startTime;
-    console.error('[SUBMIT ERROR]', {
-      duration: `${duration}ms`,
-      error: error.message,
-      stack: error.stack,
-    });
+    console.error('[SUBMIT ERROR]', { duration: `${duration}ms`, error: error.message });
 
     return NextResponse.json(
-      {
-        success: false,
-        message: `❌ ${error.message}`,
-        error: process.env.NODE_ENV === 'development' ? error.stack : undefined,
-      },
+      { success: false, message: error.message },
       { status: 500 }
     );
   }
@@ -305,7 +273,7 @@ function generateChecksum(data: any): string {
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
 
   return hash.toString(36);

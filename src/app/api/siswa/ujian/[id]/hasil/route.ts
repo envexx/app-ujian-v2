@@ -29,15 +29,12 @@ export async function GET(
       );
     }
 
-    // Get ujian with submission
+    // Get ujian with unified soal model
     const ujian = await prisma.ujian.findFirst({
       where: { id },
       include: {
         mapel: true,
-        soalPilihanGanda: {
-          orderBy: { urutan: 'asc' },
-        },
-        soalEssay: {
+        soal: {
           orderBy: { urutan: 'asc' },
         },
       },
@@ -50,15 +47,14 @@ export async function GET(
       );
     }
 
-    // Get submission
+    // Get submission with unified JawabanSoal
     const submission = await prisma.ujianSubmission.findFirst({
       where: {
         ujianId: id,
         siswaId: siswa.id,
       },
       include: {
-        jawabanPilihanGanda: true,
-        jawabanEssay: true,
+        jawabanSoal: true,
       },
     });
 
@@ -69,22 +65,31 @@ export async function GET(
       );
     }
 
-    // Get answers - convert from JawabanPilihanGanda and JawabanEssay records to object
-    const answersMap: { [key: string]: string } = {};
-    
-    // Add PG answers
-    if (submission.jawabanPilihanGanda && submission.jawabanPilihanGanda.length > 0) {
-      submission.jawabanPilihanGanda.forEach((answer: any) => {
-        answersMap[answer.soalId] = answer.jawaban;
+    // Build answers map from JawabanSoal
+    const answersMap: { [key: string]: any } = {};
+    const jawabanDetails: { [key: string]: { jawaban: any; isCorrect: boolean | null; nilai: number | null } } = {};
+
+    if (submission.jawabanSoal && submission.jawabanSoal.length > 0) {
+      submission.jawabanSoal.forEach((j: any) => {
+        answersMap[j.soalId] = j.jawaban;
+        jawabanDetails[j.soalId] = {
+          jawaban: j.jawaban,
+          isCorrect: j.isCorrect,
+          nilai: j.nilai,
+        };
       });
     }
-    
-    // Add Essay answers
-    if (submission.jawabanEssay && submission.jawabanEssay.length > 0) {
-      submission.jawabanEssay.forEach((answer: any) => {
-        answersMap[answer.soalId] = answer.jawaban;
-      });
-    }
+
+    // Prepare soal for response — include answer keys since exam is already submitted
+    const soal = ujian.soal.map((s, idx) => ({
+      id: s.id,
+      tipe: s.tipe,
+      urutan: s.urutan,
+      nomor: idx + 1,
+      pertanyaan: s.pertanyaan,
+      poin: s.poin,
+      data: s.data, // Include full data with answer keys for review
+    }));
 
     return NextResponse.json({
       success: true,
@@ -95,6 +100,7 @@ export async function GET(
           mapel: ujian.mapel.nama,
           startUjian: ujian.startUjian,
           endUjian: ujian.endUjian,
+          showScore: ujian.showScore,
         },
         submission: {
           id: submission.id,
@@ -103,9 +109,9 @@ export async function GET(
           submittedAt: submission.submittedAt,
           startedAt: submission.startedAt,
         },
-        soalPG: ujian.soalPilihanGanda,
-        soalEssay: ujian.soalEssay,
+        soal,
         answers: answersMap,
+        jawabanDetails,
       },
     });
   } catch (error) {

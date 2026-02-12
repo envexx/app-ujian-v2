@@ -30,11 +30,9 @@ async function main() {
   await prisma.kartuPelajar.deleteMany();
   await prisma.tugasSubmission.deleteMany();
   await prisma.tugas.deleteMany();
-  await prisma.jawabanEssay.deleteMany();
-  await prisma.jawabanPilihanGanda.deleteMany();
+  await prisma.jawabanSoal.deleteMany();
   await prisma.ujianSubmission.deleteMany();
-  await prisma.soalEssay.deleteMany();
-  await prisma.soalPilihanGanda.deleteMany();
+  await prisma.soal.deleteMany();
   await prisma.ujian.deleteMany();
   await prisma.materi.deleteMany();
   await prisma.jadwal.deleteMany();
@@ -409,39 +407,52 @@ async function main() {
     },
   });
 
-  // Add sample questions
-  await prisma.soalPilihanGanda.createMany({
+  // Add sample questions (unified Soal model)
+  await prisma.soal.createMany({
     data: [
       {
         ujianId: ujian.id,
+        tipe: 'PILIHAN_GANDA',
         pertanyaan: 'Berapakah hasil dari 2 + 2?',
-        opsiA: '3',
-        opsiB: '4',
-        opsiC: '5',
-        opsiD: '6',
-        jawabanBenar: 'B',
+        poin: 40,
+        data: JSON.stringify({
+          opsi: [
+            { id: 'A', teks: '3' },
+            { id: 'B', teks: '4' },
+            { id: 'C', teks: '5' },
+            { id: 'D', teks: '6' },
+          ],
+          kunciJawaban: 'B',
+        }),
         urutan: 1,
       },
       {
         ujianId: ujian.id,
+        tipe: 'PILIHAN_GANDA',
         pertanyaan: 'Berapakah hasil dari 5 x 3?',
-        opsiA: '10',
-        opsiB: '12',
-        opsiC: '15',
-        opsiD: '18',
-        jawabanBenar: 'C',
+        poin: 40,
+        data: JSON.stringify({
+          opsi: [
+            { id: 'A', teks: '10' },
+            { id: 'B', teks: '12' },
+            { id: 'C', teks: '15' },
+            { id: 'D', teks: '18' },
+          ],
+          kunciJawaban: 'C',
+        }),
         urutan: 2,
       },
+      {
+        ujianId: ujian.id,
+        tipe: 'ESSAY',
+        pertanyaan: 'Jelaskan pengertian aljabar dan berikan contohnya!',
+        poin: 20,
+        data: JSON.stringify({
+          kunciJawaban: 'Aljabar adalah cabang matematika yang menggunakan simbol dan huruf untuk mewakili angka.',
+        }),
+        urutan: 3,
+      },
     ],
-  });
-
-  await prisma.soalEssay.create({
-    data: {
-      ujianId: ujian.id,
-      pertanyaan: 'Jelaskan pengertian aljabar dan berikan contohnya!',
-      kunciJawaban: 'Aljabar adalah cabang matematika yang menggunakan simbol dan huruf untuk mewakili angka.',
-      urutan: 3,
-    },
   });
 
   console.log('✅ Created 1 ujian with 3 soal');
