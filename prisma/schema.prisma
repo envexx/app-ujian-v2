@@ -13,11 +13,205 @@ datasource db {
 }
 
 // ============================================
+// MULTI-TENANCY: SCHOOL (TENANT)
+// ============================================
+
+model School {
+  id           String   @id @default(cuid())
+  nama         String   // Nama sekolah
+  npsn         String?  @unique // Nomor Pokok Sekolah Nasional
+  alamat       String?
+  kota         String?
+  provinsi     String?
+  noTelp       String?
+  email        String?  @unique
+  website      String?
+  logo         String?  // URL to logo
+  jenjang      String?  // SD, SMP, SMA, SMK
+  isActive     Boolean  @default(true)
+  tierId       String?  // FK to Tier
+  expiredAt    DateTime? // Tanggal expired subscription
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  tier           Tier?    @relation(fields: [tierId], references: [id])
+  users          User[]
+  sekolahInfo    SekolahInfo[]
+  kelas          Kelas[]
+  mataPelajaran  MataPelajaran[]
+  guru           Guru[]
+  siswa          Siswa[]
+  jadwal         Jadwal[]
+  infoMasuk      InfoMasuk[]
+  ujian          Ujian[]
+  tugas          Tugas[]
+  materi         Materi[]
+  ujianAccessControl UjianAccessControl[]
+
+  @@index([nama])
+  @@index([isActive])
+  @@index([npsn])
+  @@index([tierId])
+  @@map("schools")
+}
+
+// ============================================
+// SUPERADMIN (Platform-level)
+// ============================================
+
+model SuperAdmin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  nama      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@map("super_admins")
+}
+
+// ============================================
+// TIER / SUBSCRIPTION PLANS
+// ============================================
+
+model Tier {
+  id          String   @id @default(cuid())
+  nama        String   @unique // trial, starter, basic, professional, enterprise
+  label       String   // Display name: "Trial", "Starter", etc.
+  harga       Int      @default(0) // Harga per bulan (IDR)
+  maxSiswa    Int      @default(50)
+  maxGuru     Int      @default(5)
+  maxKelas    Int      @default(5)
+  maxMapel    Int      @default(10)
+  maxUjian    Int      @default(10) // Per bulan
+  maxStorage  Int      @default(500) // MB
+  fipitur     Json?    // Feature flags: { aiChatbot: true, exportPdf: true, ... }
+  isActive    Boolean  @default(true)
+  urutan      Int      @default(0) // Sort order
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  schools     School[]
+
+  @@index([nama])
+  @@index([urutan])
+  @@map("tiers")
+}
+
+// ============================================
+// SMTP CONFIGURATION (Platform-level)
+// ============================================
+
+model SmtpConfig {
+  id          String   @id @default(cuid())
+  host        String   // smtp.gmail.com
+  port        Int      @default(587)
+  secure      Boolean  @default(false) // true for 465, false for 587
+  user        String   // email@domain.com
+  pass        String   // app password (encrypted)
+  fromName    String   @default("E-Learning Platform")
+  fromEmail   String   // noreply@platform.com
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("smtp_config")
+}
+
+// ============================================
+// PLATFORM NOTIFICATIONS (Push to tenants)
+// ============================================
+
+model PlatformNotification {
+  id          String   @id @default(cuid())
+  judul       String
+  pesan       String   @db.Text
+  tipe        String   // info, warning, update, maintenance, promo
+  targetRole  String[] // ["ADMIN", "GURU", "SISWA"] or ["ALL"]
+  targetSchoolIds String[] // Empty = all schools
+  priority    String   @default("normal") // low, normal, high, urgent
+  isPublished Boolean  @default(false)
+  publishedAt DateTime?
+  expiresAt   DateTime?
+  createdBy   String   // SuperAdmin ID
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  reads       NotificationRead[]
+
+  @@index([isPublished])
+  @@index([tipe])
+  @@index([publishedAt])
+  @@map("platform_notifications")
+}
+
+model NotificationRead {
+  id              String   @id @default(cuid())
+  notificationId  String
+  userId          String   // User who read it
+  readAt          DateTime @default(now())
+
+  // Relations
+  notification PlatformNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId])
+  @@map("notification_reads")
+}
+
+// ============================================
+// BROADCAST EMAIL
+// ============================================
+
+model BroadcastEmail {
+  id            String   @id @default(cuid())
+  subject       String
+  body          String   @db.Text // HTML content
+  targetType    String   // all_schools, specific_schools, by_tier
+  targetFilter  Json?    // { schoolIds: [...], tierIds: [...] }
+  status        String   @default("draft") // draft, sending, sent, failed
+  sentCount     Int      @default(0)
+  failedCount   Int      @default(0)
+  sentAt        DateTime?
+  createdBy     String   // SuperAdmin ID
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("broadcast_emails")
+}
+
+// ============================================
+// PASSWORD RESET TOKENS
+// ============================================
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ============================================
 // USER & AUTHENTICATION
 // ============================================
 
 model User {
   id           String   @id @default(cuid())
+  schoolId     String
   email        String   @unique
   password     String
   role         UserRole
@@ -27,9 +221,11 @@ model User {
   updatedAt    DateTime @updatedAt
 
   // Relations
-  siswa Siswa?
-  guru  Guru?
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  siswa  Siswa?
+  guru   Guru?
 
+  @@index([schoolId])
   @@index([email])
   @@index([role])
   @@index([isActive])
@@ -48,6 +244,7 @@ enum UserRole {
 
 model SekolahInfo {
   id        String   @id @default(cuid())
+  schoolId  String
   
   // Informasi Sekolah
   namaSekolah    String
@@ -67,7 +264,11 @@ model SekolahInfo {
   
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  // Relations
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   
+  @@index([schoolId])
   @@map("sekolah_info")
 }
 
@@ -77,7 +278,8 @@ model SekolahInfo {
 
 model Kelas {
   id          String   @id @default(cuid())
-  nama        String   @unique // 7A, 7B, 8A, etc
+  schoolId    String
+  nama        String // 7A, 7B, 8A, etc
   tingkat     String // 7, 8, 9
   waliKelasId String?
   tahunAjaran String
@@ -85,11 +287,14 @@ model Kelas {
   updatedAt   DateTime @updatedAt
 
   // Relations
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   waliKelas Guru?    @relation("WaliKelas", fields: [waliKelasId], references: [id])
   siswa     Siswa[]
   guru      GuruKelas[]
   jadwal    Jadwal[]
 
+  @@unique([schoolId, nama])
+  @@index([schoolId])
   @@index([nama])
   @@index([tingkat])
   @@index([tahunAjaran])
@@ -98,20 +303,25 @@ model Kelas {
 
 model MataPelajaran {
   id        String   @id @default(cuid())
-  nama      String   @unique
-  kode      String   @unique
+  schoolId  String
+  nama      String
+  kode      String
   jenis     String // wajib, peminatan
   jamPerMinggu Int
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
+  school  School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   guru    GuruMapel[]
   jadwal  Jadwal[]
   materi  Materi[]
   ujian   Ujian[]
   tugas   Tugas[]
 
+  @@unique([schoolId, nama])
+  @@unique([schoolId, kode])
+  @@index([schoolId])
   @@map("mata_pelajaran")
 }
 
@@ -121,8 +331,9 @@ model MataPelajaran {
 
 model Guru {
   id           String   @id @default(cuid())
+  schoolId     String
   userId       String   @unique
-  nipUsername  String   @unique // NIP atau Username
+  nipUsername  String // NIP atau Username
   nama         String
   email        String   @unique
   alamat       String?
@@ -133,6 +344,7 @@ model Guru {
   updatedAt    DateTime @updatedAt
 
   // Relations
+  school        School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   mapel         GuruMapel[]     // Guru bisa mengajar banyak mapel
   kelas         GuruKelas[]     // Guru bisa mengajar di banyak kelas
@@ -143,6 +355,8 @@ model Guru {
   tugas         Tugas[]
   gradeConfig   GradeConfig?    // Konfigurasi bobot penilaian
 
+  @@unique([schoolId, nipUsername])
+  @@index([schoolId])
   @@index([nipUsername])
   @@index([email])
   @@index([userId])
@@ -179,9 +393,10 @@ model GuruKelas {
 
 model Siswa {
   id           String   @id @default(cuid())
+  schoolId     String
   userId       String   @unique
-  nisn         String   @unique
-  nis          String   @unique
+  nisn         String
+  nis          String
   nama         String
   email        String?  @unique
   kelasId      String
@@ -196,6 +411,7 @@ model Siswa {
   updatedAt    DateTime @updatedAt
 
   // Relations
+  school            School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   kelas             Kelas               @relation(fields: [kelasId], references: [id])
   presensi          Presensi[]
@@ -203,6 +419,9 @@ model Siswa {
   tugasSubmission   TugasSubmission[]
   ujianSubmission   UjianSubmission[]
 
+  @@unique([schoolId, nisn])
+  @@unique([schoolId, nis])
+  @@index([schoolId])
   @@index([nisn])
   @@index([nis])
   @@index([kelasId])
@@ -236,6 +455,7 @@ model KartuPelajar {
 
 model Jadwal {
   id         String   @id @default(cuid())
+  schoolId   String
   kelasId    String
   mapelId    String
   guruId     String
@@ -247,10 +467,12 @@ model Jadwal {
   updatedAt  DateTime @updatedAt
 
   // Relations
-  kelas Kelas         @relation(fields: [kelasId], references: [id], onDelete: Cascade)
-  mapel MataPelajaran @relation(fields: [mapelId], references: [id], onDelete: Cascade)
-  guru  Guru          @relation(fields: [guruId], references: [id], onDelete: Cascade)
+  school School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  kelas  Kelas         @relation(fields: [kelasId], references: [id], onDelete: Cascade)
+  mapel  MataPelajaran @relation(fields: [mapelId], references: [id], onDelete: Cascade)
+  guru   Guru          @relation(fields: [guruId], references: [id], onDelete: Cascade)
 
+  @@index([schoolId])
   @@map("jadwal")
 }
 
@@ -260,13 +482,18 @@ model Jadwal {
 
 model InfoMasuk {
   id        String   @id @default(cuid())
+  schoolId  String
   hari      String   // Senin, Selasa, Rabu, Kamis, Jumat, Sabtu, Minggu
   jamMasuk  String   // 07:00
   jamPulang String   // 14:00
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hari])
+  // Relations
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, hari])
+  @@index([schoolId])
   @@index([hari])
   @@map("info_masuk")
 }
@@ -302,6 +529,7 @@ model Presensi {
 
 model Materi {
   id            String   @id @default(cuid())
+  schoolId      String
   judul         String
   deskripsi     String?
   mapelId       String
@@ -315,9 +543,11 @@ model Materi {
   updatedAt     DateTime @updatedAt
 
   // Relations
-  mapel MataPelajaran @relation(fields: [mapelId], references: [id], onDelete: Cascade)
-  guru  Guru          @relation(fields: [guruId], references: [id], onDelete: Cascade)
+  school School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  mapel  MataPelajaran @relation(fields: [mapelId], references: [id], onDelete: Cascade)
+  guru   Guru          @relation(fields: [guruId], references: [id], onDelete: Cascade)
 
+  @@index([schoolId])
   @@map("materi")
 }
 
@@ -327,6 +557,7 @@ model Materi {
 
 model Tugas {
   id          String   @id @default(cuid())
+  schoolId    String
   judul       String
   deskripsi   String
   instruksi   String
@@ -340,10 +571,12 @@ model Tugas {
   updatedAt   DateTime @updatedAt
 
   // Relations
+  school      School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   mapel       MataPelajaran     @relation(fields: [mapelId], references: [id], onDelete: Cascade)
   guru        Guru              @relation(fields: [guruId], references: [id], onDelete: Cascade)
   submissions TugasSubmission[]
 
+  @@index([schoolId])
   @@index([guruId])
   @@index([mapelId])
   @@index([status])
@@ -382,6 +615,7 @@ model TugasSubmission {
 
 model Ujian {
   id                String   @id @default(cuid())
+  schoolId          String
   judul             String
   deskripsi         String?
   mapelId           String
@@ -396,11 +630,13 @@ model Ujian {
   updatedAt         DateTime @updatedAt
 
   // Relations
+  school           School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   mapel            MataPelajaran      @relation(fields: [mapelId], references: [id], onDelete: Cascade)
   guru             Guru               @relation(fields: [guruId], references: [id], onDelete: Cascade)
   soal             Soal[]
   submissions      UjianSubmission[]
 
+  @@index([schoolId])
   @@index([guruId])
   @@index([mapelId])
   @@index([status])
@@ -415,6 +651,7 @@ model Ujian {
 
 model UjianAccessControl {
   id              String    @id @default(cuid())
+  schoolId        String
   isActive        Boolean   @default(false) // Global exam access status
   currentToken    String?   // Current active token (6-digit code)
   tokenGeneratedAt DateTime? // When token was generated
@@ -424,6 +661,10 @@ model UjianAccessControl {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // Relations
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
   @@map("ujian_access_control")
 }
 
@@ -546,6 +787,27 @@ model FailedNotification {
   @@index([failedAt])
   @@index([retried])
   @@map("failed_notifications")
+}
+
+// ============================================
+// LANDING PAGE MEDIA
+// ============================================
+
+model LandingMedia {
+  id          String   @id @default(cuid())
+  tipe        String   // "image" | "video"
+  judul       String   // Judul/caption
+  url         String   // Image path or YouTube URL
+  aspectRatio String   @default("16:9") // "16:9" | "9:16" | "1:1"
+  urutan      Int      @default(0) // Urutan tampil
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tipe])
+  @@index([isActive])
+  @@index([urutan])
+  @@map("landing_media")
 }
 
 // ============================================

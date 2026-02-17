@@ -13,6 +13,11 @@ const nextConfig = {
         destination: "/dashboard/default",
         permanent: false,
       },
+      {
+        source: "/login",
+        destination: "/admin-guru",
+        permanent: true,
+      },
     ];
   },
 };

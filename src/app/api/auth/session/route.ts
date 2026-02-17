@@ -75,6 +75,7 @@ export async function GET() {
       profileData = {
         email: user.email,
         role: 'ADMIN',
+        foto: user.profilePhoto,
       };
     }
 

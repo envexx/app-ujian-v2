@@ -183,6 +183,7 @@ export async function POST(request: Request) {
     // Create ujian as draft (soal ditambahkan di halaman edit)
     const ujian = await prisma.ujian.create({
       data: {
+        schoolId: guru.schoolId,
         judul,
         deskripsi,
         mapelId,

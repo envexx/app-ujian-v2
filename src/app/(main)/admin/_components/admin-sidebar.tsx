@@ -9,13 +9,9 @@ import {
   Users,
   GraduationCap,
   BookOpen,
-  ClipboardList,
-  FileText,
-  UserCheck,
-  CreditCard,
   KeyRound,
   Settings,
-  Clock,
+  ExternalLink,
 } from "lucide-react";
 
 import {
@@ -48,12 +44,9 @@ const menuItems = [
     ],
   },
   {
-    title: "Ujian & Presensi",
+    title: "Ujian",
     items: [
       { title: "Token Ujian", icon: KeyRound, url: "/admin/token-ujian" },
-      { title: "Presensi", icon: UserCheck, url: "/admin/presensi" },
-      { title: "Kartu Pelajar", icon: CreditCard, url: "/admin/kartu-pelajar" },
-      { title: "Info Masuk & Pulang", icon: Clock, url: "/admin/info-masuk" },
     ],
   },
 ];
@@ -139,6 +132,14 @@ export function AdminSidebar() {
       </SidebarContent>
       <SidebarFooter className="border-t p-4">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild>
+              <a href="https://kehadiran.online/" target="_blank" rel="noopener noreferrer" className="hover:bg-accent hover:text-accent-foreground transition-colors">
+                <ExternalLink className="w-4 h-4" />
+                <span>Presensi Online</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild isActive={isActive("/admin/settings")}>
               <a href="/admin/settings" className={cn(

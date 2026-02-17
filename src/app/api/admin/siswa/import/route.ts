@@ -48,8 +48,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get all kelas for validation
+    // Get all kelas for validation (scoped to this school)
     const kelasList = await prisma.kelas.findMany({
+      where: { schoolId: session.schoolId! },
       select: { id: true, nama: true },
     });
     const kelasMap = new Map(kelasList.map(k => [k.nama, k.id]));
@@ -151,6 +152,7 @@ export async function POST(request: Request) {
           const defaultPassword = await bcrypt.hash(nisn, 10);
           const user = await tx.user.create({
             data: {
+              schoolId: session.schoolId!,
               email: autoEmail,
               password: defaultPassword,
               role: 'SISWA',
@@ -159,6 +161,7 @@ export async function POST(request: Request) {
           });
 
           const siswaData: any = {
+            schoolId: session.schoolId!,
             userId: user.id,
             nis,
             nisn,

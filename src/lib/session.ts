@@ -4,7 +4,8 @@ import { cookies } from 'next/headers';
 export interface SessionData {
   userId?: string;
   email?: string;
-  role?: 'ADMIN' | 'GURU' | 'SISWA';
+  role?: 'ADMIN' | 'GURU' | 'SISWA' | 'SUPERADMIN';
+  schoolId?: string; // Tenant ID - null for SUPERADMIN
   isLoggedIn?: boolean;
 }
 
@@ -53,6 +54,7 @@ export async function createSession(data: Omit<SessionData, 'isLoggedIn'>) {
   session.userId = data.userId;
   session.email = data.email;
   session.role = data.role;
+  session.schoolId = data.schoolId;
   session.isLoggedIn = true;
   await session.save();
 }

@@ -19,6 +19,7 @@ export async function GET(request: Request) {
       where: { userId: session.userId },
       include: {
         kelas: true,
+        school: { select: { id: true } },
       },
     });
 
@@ -31,27 +32,30 @@ export async function GET(request: Request) {
 
     // Get stats
     const [tugasCount, ujianCount, materiCount, tugasSubmissions, ujianSubmissions] = await Promise.all([
-      // Total tugas for this kelas
+      // Total tugas for this kelas (same school)
       prisma.tugas.count({
         where: {
+          schoolId: siswa.schoolId,
           kelas: {
             has: siswa.kelas.nama,
           },
           status: 'aktif',
         },
       }),
-      // Total ujian for this kelas
+      // Total ujian for this kelas (same school)
       prisma.ujian.count({
         where: {
+          schoolId: siswa.schoolId,
           kelas: {
             has: siswa.kelas.nama,
           },
           status: 'aktif',
         },
       }),
-      // Total materi for this kelas
+      // Total materi for this kelas (same school)
       prisma.materi.count({
         where: {
+          schoolId: siswa.schoolId,
           kelas: {
             has: siswa.kelas.nama,
           },
@@ -74,6 +78,7 @@ export async function GET(request: Request) {
     // Get upcoming tugas (deadline soon)
     const upcomingTugas = await prisma.tugas.findMany({
       where: {
+        schoolId: siswa.schoolId,
         kelas: {
           has: siswa.kelas.nama,
         },
@@ -94,6 +99,7 @@ export async function GET(request: Request) {
     // Get upcoming ujian
     const upcomingUjian = await prisma.ujian.findMany({
       where: {
+        schoolId: siswa.schoolId,
         kelas: {
           has: siswa.kelas.nama,
         },

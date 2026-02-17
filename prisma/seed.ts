@@ -1,23 +1,16 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { PrismaNeon } from '@prisma/adapter-neon';
+import { neonConfig, Pool } from '@neondatabase/serverless';
+import ws from 'ws';
 import * as bcrypt from 'bcryptjs';
 
-const connectionString = process.env.DATABASE_URL;
-console.log('🔗 Connecting to database...');
+neonConfig.webSocketConstructor = ws;
 
-const pool = new Pool({ 
-  connectionString,
-  ssl: false // Coolify database doesn't support SSL
-});
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+console.log('🔗 Connecting to Neon database...');
 
-const adapter = new PrismaPg(pool);
-
-/**
- * FIX: Using 'as any' to bypass TypeScript strict checking
- * due to version mismatch between @prisma/adapter-pg v7 and @prisma/client v6
- */
+const adapter = new PrismaNeon(pool);
 const prisma = new PrismaClient({ adapter } as any);
 
 async function main() {
@@ -37,11 +30,134 @@ async function main() {
   await prisma.materi.deleteMany();
   await prisma.jadwal.deleteMany();
   await prisma.guruMapel.deleteMany();
+  await prisma.guruKelas.deleteMany();
   await prisma.siswa.deleteMany();
   await prisma.guru.deleteMany();
   await prisma.kelas.deleteMany();
   await prisma.mataPelajaran.deleteMany();
+  await prisma.sekolahInfo.deleteMany();
+  await prisma.infoMasuk.deleteMany();
+  await prisma.ujianAccessControl.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.notificationRead.deleteMany();
+  await prisma.platformNotification.deleteMany();
+  await prisma.broadcastEmail.deleteMany();
+  await prisma.smtpConfig.deleteMany();
+  await prisma.superAdmin.deleteMany();
+  await prisma.school.deleteMany();
+  await prisma.tier.deleteMany();
+
+  // ============================================
+  // 0. CREATE SUPERADMIN & SCHOOL (TENANT)
+  // ============================================
+  console.log('🛡️  Creating superadmin...');
+  await prisma.superAdmin.create({
+    data: {
+      email: 'superadmin@platform.com',
+      password: await bcrypt.hash('superadmin123', 10),
+      nama: 'Super Admin',
+    },
+  });
+  console.log('✅ SuperAdmin created: superadmin@platform.com / superadmin123');
+
+  // ============================================
+  // 0.1 CREATE TIERS
+  // ============================================
+  console.log('\n📦 Creating tiers...');
+  const tierTrial = await prisma.tier.create({
+    data: {
+      nama: 'trial',
+      label: 'Trial',
+      harga: 0,
+      maxSiswa: 50,
+      maxGuru: 5,
+      maxKelas: 3,
+      maxMapel: 5,
+      maxUjian: 5,
+      maxStorage: 100,
+      fipitur: { aiChatbot: false, exportPdf: false, bulkImport: false },
+      urutan: 0,
+    },
+  });
+  const tierStarter = await prisma.tier.create({
+    data: {
+      nama: 'starter',
+      label: 'Starter',
+      harga: 150000,
+      maxSiswa: 200,
+      maxGuru: 15,
+      maxKelas: 10,
+      maxMapel: 15,
+      maxUjian: 30,
+      maxStorage: 1000,
+      fipitur: { aiChatbot: false, exportPdf: true, bulkImport: true },
+      urutan: 1,
+    },
+  });
+  const tierBasic = await prisma.tier.create({
+    data: {
+      nama: 'basic',
+      label: 'Basic',
+      harga: 350000,
+      maxSiswa: 500,
+      maxGuru: 30,
+      maxKelas: 20,
+      maxMapel: 25,
+      maxUjian: 100,
+      maxStorage: 5000,
+      fipitur: { aiChatbot: true, exportPdf: true, bulkImport: true },
+      urutan: 2,
+    },
+  });
+  const tierPro = await prisma.tier.create({
+    data: {
+      nama: 'professional',
+      label: 'Professional',
+      harga: 750000,
+      maxSiswa: 1500,
+      maxGuru: 80,
+      maxKelas: 50,
+      maxMapel: 50,
+      maxUjian: 500,
+      maxStorage: 20000,
+      fipitur: { aiChatbot: true, exportPdf: true, bulkImport: true, prioritySupport: true },
+      urutan: 3,
+    },
+  });
+  const tierEnterprise = await prisma.tier.create({
+    data: {
+      nama: 'enterprise',
+      label: 'Enterprise',
+      harga: 1500000,
+      maxSiswa: 99999,
+      maxGuru: 99999,
+      maxKelas: 99999,
+      maxMapel: 99999,
+      maxUjian: 99999,
+      maxStorage: 100000,
+      fipitur: { aiChatbot: true, exportPdf: true, bulkImport: true, prioritySupport: true, customBranding: true, apiAccess: true },
+      urutan: 4,
+    },
+  });
+  console.log('✅ Created 5 tiers: Trial, Starter, Basic, Professional, Enterprise');
+
+  console.log('\n🏫 Creating school (tenant)...');
+  const school = await prisma.school.create({
+    data: {
+      nama: 'SMP Negeri 1 Jakarta',
+      npsn: '20100001',
+      alamat: 'Jl. Pendidikan No. 1, Jakarta Pusat',
+      kota: 'Jakarta',
+      provinsi: 'DKI Jakarta',
+      noTelp: '021-12345678',
+      email: 'info@smpn1jkt.sch.id',
+      jenjang: 'SMP',
+      isActive: true,
+      tierId: tierBasic.id,
+    },
+  });
+  console.log('✅ School created:', school.nama);
+  const schoolId = school.id;
 
   // ============================================
   // 1. CREATE ADMIN USER
@@ -49,6 +165,7 @@ async function main() {
   console.log('👤 Creating admin user...');
   const adminUser = await prisma.user.create({
     data: {
+      schoolId,
       email: 'admin@school.com',
       password: await bcrypt.hash('admin123', 10),
       role: 'ADMIN',
@@ -63,6 +180,7 @@ async function main() {
   console.log('\n📚 Creating mata pelajaran...');
   const matematika = await prisma.mataPelajaran.create({
     data: {
+      schoolId,
       nama: 'Matematika',
       kode: 'MAT',
       jenis: 'wajib',
@@ -72,6 +190,7 @@ async function main() {
 
   const bahasaIndonesia = await prisma.mataPelajaran.create({
     data: {
+      schoolId,
       nama: 'Bahasa Indonesia',
       kode: 'BIN',
       jenis: 'wajib',
@@ -81,6 +200,7 @@ async function main() {
 
   const ipa = await prisma.mataPelajaran.create({
     data: {
+      schoolId,
       nama: 'IPA',
       kode: 'IPA',
       jenis: 'wajib',
@@ -90,6 +210,7 @@ async function main() {
 
   const bahasaInggris = await prisma.mataPelajaran.create({
     data: {
+      schoolId,
       nama: 'Bahasa Inggris',
       kode: 'BING',
       jenis: 'wajib',
@@ -105,6 +226,7 @@ async function main() {
   console.log('\n🏫 Creating kelas...');
   const kelas7A = await prisma.kelas.create({
     data: {
+      schoolId,
       nama: '7A',
       tingkat: '7',
       tahunAjaran: '2024/2025',
@@ -113,6 +235,7 @@ async function main() {
 
   const kelas7B = await prisma.kelas.create({
     data: {
+      schoolId,
       nama: '7B',
       tingkat: '7',
       tahunAjaran: '2024/2025',
@@ -121,6 +244,7 @@ async function main() {
 
   const kelas8A = await prisma.kelas.create({
     data: {
+      schoolId,
       nama: '8A',
       tingkat: '8',
       tahunAjaran: '2024/2025',
@@ -136,12 +260,14 @@ async function main() {
   
   const guru1User = await prisma.user.create({
     data: {
+      schoolId,
       email: 'budi.hartono@school.com',
       password: await bcrypt.hash('guru123', 10),
       role: 'GURU',
       profilePhoto: '/uploads/profiles/guru1.jpg',
       guru: {
         create: {
+          schoolId,
           nipUsername: '196501011990031001',
           nama: 'Dr. Budi Hartono, M.Pd',
           email: 'budi.hartono@school.com',
@@ -156,12 +282,14 @@ async function main() {
 
   const guru2User = await prisma.user.create({
     data: {
+      schoolId,
       email: 'siti.nurhaliza@school.com',
       password: await bcrypt.hash('guru123', 10),
       role: 'GURU',
       profilePhoto: '/uploads/profiles/guru2.jpg',
       guru: {
         create: {
+          schoolId,
           nipUsername: '197003151995122001',
           nama: 'Siti Nurhaliza, S.Pd',
           email: 'siti.nurhaliza@school.com',
@@ -176,12 +304,14 @@ async function main() {
 
   const guru3User = await prisma.user.create({
     data: {
+      schoolId,
       email: 'ahmad.fauzi@school.com',
       password: await bcrypt.hash('guru123', 10),
       role: 'GURU',
       profilePhoto: '/uploads/profiles/guru3.jpg',
       guru: {
         create: {
+          schoolId,
           nipUsername: '198505202010011002',
           nama: 'Ahmad Fauzi, S.Si',
           email: 'ahmad.fauzi@school.com',
@@ -306,12 +436,14 @@ async function main() {
   for (const data of siswaData) {
     await prisma.user.create({
       data: {
+        schoolId,
         email: data.email,
         password: await bcrypt.hash('siswa123', 10),
         role: 'SISWA',
         profilePhoto: `/uploads/profiles/${data.nis}.jpg`,
         siswa: {
           create: {
+            schoolId,
             ...data,
             foto: `/uploads/profiles/${data.nis}.jpg`,
           },
@@ -375,6 +507,7 @@ async function main() {
   console.log('\n📋 Creating tugas...');
   await prisma.tugas.create({
     data: {
+      schoolId,
       judul: 'Latihan Soal Aljabar',
       deskripsi: 'Kerjakan soal latihan aljabar halaman 45-50',
       instruksi: 'Kerjakan dengan rapi dan jelas. Upload dalam format PDF.',
@@ -394,6 +527,7 @@ async function main() {
   console.log('\n📝 Creating ujian...');
   const ujian = await prisma.ujian.create({
     data: {
+      schoolId,
       judul: 'Ujian Tengah Semester Matematika',
       deskripsi: 'UTS Matematika Kelas 7',
       mapelId: matematika.id,
@@ -471,6 +605,9 @@ async function main() {
   console.log('✅ DATABASE SEEDING COMPLETED!');
   console.log('✅ ============================================\n');
   console.log('📊 Summary:');
+  console.log('   - 1 SuperAdmin');
+  console.log('   - 5 Tiers');
+  console.log('   - 1 School (tenant, Basic tier)');
   console.log('   - 1 Admin user');
   console.log('   - 3 Guru users');
   console.log('   - 7 Siswa users');
@@ -481,6 +618,7 @@ async function main() {
   console.log('   - 1 Tugas');
   console.log('   - 1 Ujian (with 3 soal)');
   console.log('\n🔑 Login Credentials:');
+  console.log('   SuperAdmin: superadmin@platform.com / superadmin123');
   console.log('   Admin: admin@school.com / admin123');
   console.log('   Guru: budi.hartono@school.com / guru123');
   console.log('   Siswa: ahmad.rizki@student.com / siswa123');

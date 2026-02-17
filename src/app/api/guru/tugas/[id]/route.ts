@@ -55,9 +55,10 @@ export async function GET(
       );
     }
 
-    // Get all siswa in the kelas
+    // Get all siswa in the kelas (same school)
     const allSiswa = await prisma.siswa.findMany({
       where: {
+        schoolId: tugas.schoolId,
         kelas: {
           nama: {
             in: tugas.kelas,

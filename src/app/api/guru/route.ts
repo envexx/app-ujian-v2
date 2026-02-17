@@ -1,21 +1,27 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { includes } from '@/lib/query-helpers';
+import { getSession } from '@/lib/session';
+import { checkTierLimit } from '@/lib/tier-limits';
 import bcrypt from 'bcryptjs';
 
 export async function GET(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const mapelId = searchParams.get('mapel');
     
     const guru = await prisma.guru.findMany({
-      where: mapelId && mapelId !== 'all' ? {
-        mapel: {
-          some: {
-            mapelId,
-          },
-        },
-      } : undefined,
+      where: {
+        schoolId: session.schoolId,
+        ...(mapelId && mapelId !== 'all' ? {
+          mapel: { some: { mapelId } },
+        } : {}),
+      },
       include: includes.guruWithRelations,
       orderBy: { nama: 'asc' },
     });
@@ -35,6 +41,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || session.role !== 'ADMIN' || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { mapelIds = [], kelasIds = [], ...guruData } = body;
     
@@ -46,6 +57,15 @@ export async function POST(request: Request) {
       );
     }
     
+    // Check tier limit
+    const tierCheck = await checkTierLimit(session.schoolId, 'guru');
+    if (!tierCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: `Batas maksimal guru untuk tier ${tierCheck.tierLabel} adalah ${tierCheck.max}. Saat ini: ${tierCheck.current}. Upgrade tier untuk menambah kapasitas.` },
+        { status: 403 }
+      );
+    }
+
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({
       where: { email: guruData.email },
@@ -77,6 +97,7 @@ export async function POST(request: Request) {
     // Create User account first
     const user = await prisma.user.create({
       data: {
+        schoolId: session.schoolId!,
         email: guruData.email,
         password: hashedPassword, // Default password: guru123 (hashed)
         role: 'GURU',
@@ -87,6 +108,7 @@ export async function POST(request: Request) {
     // Then create Guru with the userId
     const newGuru = await prisma.guru.create({
       data: {
+        schoolId: session.schoolId!,
         nipUsername: guruData.nipUsername,
         nama: guruData.nama,
         email: guruData.email,
@@ -142,6 +164,11 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, mapelIds = [], kelasIds = [], ...data } = body;
     
@@ -150,6 +177,12 @@ export async function PUT(request: Request) {
         { success: false, error: 'ID is required' },
         { status: 400 }
       );
+    }
+
+    // Verify guru belongs to this school
+    const existing = await prisma.guru.findFirst({ where: { id, schoolId: session.schoolId } });
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Guru tidak ditemukan' }, { status: 404 });
     }
     
     // Delete existing mapel and kelas relations
@@ -200,6 +233,11 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     
@@ -210,9 +248,9 @@ export async function DELETE(request: Request) {
       );
     }
     
-    // Get guru to find userId
-    const guru = await prisma.guru.findUnique({
-      where: { id },
+    // Get guru to find userId (verify belongs to this school)
+    const guru = await prisma.guru.findFirst({
+      where: { id, schoolId: session.schoolId },
       select: { userId: true },
     });
     

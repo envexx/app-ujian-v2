@@ -73,10 +73,11 @@ export async function GET(
       );
     }
 
-    // Get ujian detail with unified soal model
+    // Get ujian detail with unified soal model (same school)
     const ujian = await prisma.ujian.findFirst({
       where: {
         id,
+        schoolId: siswa.schoolId,
         kelas: { has: siswa.kelas.nama },
         status: 'aktif',
       },

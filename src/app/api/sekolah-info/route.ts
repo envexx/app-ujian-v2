@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getSession } from '@/lib/session';
 
 export async function GET() {
   try {
-    // Get the first (and should be only) school info record
-    const sekolahInfo = await prisma.sekolahInfo.findFirst();
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const sekolahInfo = await prisma.sekolahInfo.findFirst({
+      where: { schoolId: session.schoolId },
+    });
     
     return NextResponse.json({
       success: true,
@@ -21,10 +28,17 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     
-    // Check if school info already exists
-    const existing = await prisma.sekolahInfo.findFirst();
+    // Check if school info already exists for this school
+    const existing = await prisma.sekolahInfo.findFirst({
+      where: { schoolId: session.schoolId },
+    });
     
     if (existing) {
       // Update existing record
@@ -41,7 +55,7 @@ export async function POST(request: Request) {
     } else {
       // Create new record
       const created = await prisma.sekolahInfo.create({
-        data: body,
+        data: { ...body, schoolId: session.schoolId },
       });
       
       return NextResponse.json({
@@ -61,6 +75,11 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, ...data } = body;
     
@@ -69,6 +88,11 @@ export async function PUT(request: Request) {
         { success: false, error: 'ID is required' },
         { status: 400 }
       );
+    }
+
+    const existing = await prisma.sekolahInfo.findFirst({ where: { id, schoolId: session.schoolId } });
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Data tidak ditemukan' }, { status: 404 });
     }
     
     const updated = await prisma.sekolahInfo.update({

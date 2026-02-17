@@ -1,15 +1,25 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { includes } from '@/lib/query-helpers';
+import { getSession } from '@/lib/session';
+import { checkTierLimit } from '@/lib/tier-limits';
 import * as bcrypt from 'bcryptjs';
 
 export async function GET(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const kelasId = searchParams.get('kelas');
     
     const siswa = await prisma.siswa.findMany({
-      where: kelasId && kelasId !== 'all' ? { kelasId } : undefined,
+      where: {
+        schoolId: session.schoolId,
+        ...(kelasId && kelasId !== 'all' ? { kelasId } : {}),
+      },
       select: {
         id: true,
         nisn: true,
@@ -58,6 +68,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { nis, nisn, nama, kelasId, jenisKelamin, tanggalLahir, alamat, noTelp, namaWali, noTelpWali } = body;
 
@@ -69,8 +84,17 @@ export async function POST(request: Request) {
       );
     }
 
+    // Check tier limit
+    const tierCheck = await checkTierLimit(session.schoolId, 'siswa');
+    if (!tierCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: `Batas maksimal siswa untuk tier ${tierCheck.tierLabel} adalah ${tierCheck.max}. Saat ini: ${tierCheck.current}. Upgrade tier untuk menambah kapasitas.` },
+        { status: 403 }
+      );
+    }
+
     // Check duplicate NIS
-    const existingNis = await prisma.siswa.findUnique({ where: { nis } });
+    const existingNis = await prisma.siswa.findFirst({ where: { nis } });
     if (existingNis) {
       return NextResponse.json(
         { success: false, error: `NIS "${nis}" sudah digunakan oleh siswa lain` },
@@ -79,7 +103,7 @@ export async function POST(request: Request) {
     }
 
     // Check duplicate NISN
-    const existingNisn = await prisma.siswa.findUnique({ where: { nisn } });
+    const existingNisn = await prisma.siswa.findFirst({ where: { nisn } });
     if (existingNisn) {
       return NextResponse.json(
         { success: false, error: `NISN "${nisn}" sudah digunakan oleh siswa lain` },
@@ -115,12 +139,14 @@ export async function POST(request: Request) {
 
     // Build siswa data — only include optional fields if provided
     const siswaCreateData: any = {
+      school: { connect: { id: session.schoolId } },
       nis,
       nisn,
       nama,
       jenisKelamin,
       user: {
         create: {
+          schoolId: session.schoolId,
           email: autoEmail,
           password: hashedPassword,
           role: 'SISWA',
@@ -169,6 +195,11 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, ...data } = body;
     
@@ -177,6 +208,12 @@ export async function PUT(request: Request) {
         { success: false, error: 'ID is required' },
         { status: 400 }
       );
+    }
+
+    // Verify siswa belongs to this school
+    const existing = await prisma.siswa.findFirst({ where: { id, schoolId: session.schoolId } });
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Siswa tidak ditemukan' }, { status: 404 });
     }
     
     // Convert tanggalLahir from date string to DateTime if provided
@@ -222,6 +259,11 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     
@@ -230,6 +272,12 @@ export async function DELETE(request: Request) {
         { success: false, error: 'ID is required' },
         { status: 400 }
       );
+    }
+
+    // Verify siswa belongs to this school
+    const existing = await prisma.siswa.findFirst({ where: { id, schoolId: session.schoolId } });
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Siswa tidak ditemukan' }, { status: 404 });
     }
     
     await prisma.siswa.delete({

@@ -1,22 +1,15 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { PrismaNeon } from '@prisma/adapter-neon';
+import { neonConfig, Pool } from '@neondatabase/serverless';
+import ws from 'ws';
 
-const connectionString = process.env.DATABASE_URL;
-console.log('🔗 Connecting to database...');
+neonConfig.webSocketConstructor = ws;
 
-const pool = new Pool({ 
-  connectionString,
-  ssl: false // Coolify database doesn't support SSL
-});
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+console.log('🔗 Connecting to Neon database...');
 
-const adapter = new PrismaPg(pool);
-
-/**
- * FIX: Using 'as any' to bypass TypeScript strict checking
- * due to version mismatch between @prisma/adapter-pg v7 and @prisma/client v6
- */
+const adapter = new PrismaNeon(pool);
 const prisma = new PrismaClient({ adapter } as any);
 
 async function seedInfoMasuk() {
@@ -33,17 +26,25 @@ async function seedInfoMasuk() {
     { hari: 'Minggu', jamMasuk: '08:00', jamPulang: '12:00' }, // Minggu biasanya tidak ada sekolah, tapi tetap diisi
   ];
 
+  // Find first school
+  const school = await prisma.school.findFirst();
+  if (!school) {
+    console.error('❌ No school found. Run main seed first.');
+    return;
+  }
+
   console.log('📅 Creating info masuk untuk setiap hari...');
   
   for (const data of infoMasukData) {
     try {
       const infoMasuk = await prisma.infoMasuk.upsert({
-        where: { hari: data.hari },
+        where: { schoolId_hari: { schoolId: school.id, hari: data.hari } },
         update: {
           jamMasuk: data.jamMasuk,
           jamPulang: data.jamPulang,
         },
         create: {
+          schoolId: school.id,
           hari: data.hari,
           jamMasuk: data.jamMasuk,
           jamPulang: data.jamPulang,
@@ -67,7 +68,6 @@ async function main() {
     process.exit(1);
   } finally {
     await prisma.$disconnect();
-    await pool.end();
   }
 }
 

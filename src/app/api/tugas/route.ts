@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { includes } from '@/lib/query-helpers';
+import { getSession } from '@/lib/session';
 
 export async function GET(request: Request) {
   try {
@@ -36,11 +37,17 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     
     const newTugas = await prisma.tugas.create({
       data: {
         ...body,
+        schoolId: session.schoolId,
         status: body.status || 'aktif',
       },
       include: includes.tugasWithStats,

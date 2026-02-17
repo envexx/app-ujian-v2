@@ -28,9 +28,10 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get materi for siswa's kelas
+    // Get materi for siswa's kelas (same school)
     const materi = await prisma.materi.findMany({
       where: {
+        schoolId: siswa.schoolId,
         kelas: {
           has: siswa.kelas.nama,
         },

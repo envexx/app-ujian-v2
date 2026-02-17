@@ -10,8 +10,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, LogOut, User, GraduationCap } from "lucide-react";
+import { LogOut, User, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/notification-bell";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { useSekolahInfo } from "@/hooks/useSWR";
@@ -77,15 +78,12 @@ export function SiswaHeader() {
         </div>
       </div>
       <div className="ml-auto flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-red-600 rounded-full"></span>
-        </Button>
+        <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-10 w-10 rounded-full">
               <Avatar className="h-10 w-10">
-                <AvatarImage src={siswa.foto || "/avatars/siswa.png"} alt={nama} />
+                <AvatarImage src={siswa.foto || "/avatars/siswa.png"} alt={nama} className="object-cover" />
                 <AvatarFallback className="bg-gradient-to-r from-[#0221CD] to-[#0221CD]/80 text-white">
                   {initials}
                 </AvatarFallback>

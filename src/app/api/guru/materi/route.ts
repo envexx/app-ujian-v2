@@ -110,6 +110,7 @@ export async function POST(request: Request) {
     // Create materi
     const materi = await prisma.materi.create({
       data: {
+        schoolId: guru.schoolId,
         judul,
         deskripsi,
         mapelId,

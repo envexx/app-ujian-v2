@@ -10,16 +10,16 @@ function getHariIndonesia(): string {
 }
 
 // Fungsi untuk menentukan apakah jam masuk atau jam pulang
-async function getTipePresensi(): Promise<'masuk' | 'pulang'> {
+async function getTipePresensi(schoolId: string): Promise<'masuk' | 'pulang'> {
   const hari = getHariIndonesia();
   const sekarang = getCurrentDateIndonesia();
   const jamSekarang = sekarang.getHours();
   const menitSekarang = sekarang.getMinutes();
   const waktuSekarang = `${String(jamSekarang).padStart(2, '0')}:${String(menitSekarang).padStart(2, '0')}`;
 
-  // Ambil info masuk untuk hari ini
-  const infoMasuk = await prisma.infoMasuk.findUnique({
-    where: { hari },
+  // Ambil info masuk untuk hari ini (scoped to school)
+  const infoMasuk = await prisma.infoMasuk.findFirst({
+    where: { schoolId, hari },
   });
 
   if (!infoMasuk) {
@@ -71,10 +71,11 @@ export async function POST(request: Request) {
     }
 
     // Find siswa by NISN dengan data lengkap termasuk nomor ortu
-    const siswa = await prisma.siswa.findUnique({
+    const siswa = await prisma.siswa.findFirst({
       where: { nisn },
       select: {
         id: true,
+        schoolId: true,
         nisn: true,
         nama: true,
         kelasId: true,
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
     }
 
     // Tentukan tipe presensi (masuk atau pulang)
-    const tipe = await getTipePresensi();
+    const tipe = await getTipePresensi(siswa.schoolId);
 
     // Use Indonesian timezone for accurate date checking
     const todayIndonesia = getStartOfDayIndonesia();

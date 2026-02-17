@@ -17,7 +17,6 @@ export default function SiswaLoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Fetch school info
     fetch('/api/school/info')
       .then(res => res.json())
       .then(data => {
@@ -36,7 +35,6 @@ export default function SiswaLoginPage() {
       return;
     }
 
-    // Validate NISN format (should be numbers only)
     if (!/^\d+$/.test(nisn)) {
       toast.error("NISN harus berupa angka");
       return;
@@ -46,9 +44,7 @@ export default function SiswaLoginPage() {
     try {
       const response = await fetch('/api/auth/siswa-login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nisn }),
       });
 
@@ -56,7 +52,6 @@ export default function SiswaLoginPage() {
 
       if (response.ok && data.success) {
         toast.success("Login berhasil!");
-        // Redirect to siswa dashboard
         router.push('/siswa');
         router.refresh();
       } else {

@@ -15,19 +15,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Find siswa by NISN first, then try NIS
-    let siswa = await prisma.siswa.findUnique({
+    let siswa = await prisma.siswa.findFirst({
       where: { nisn },
       include: {
-        user: true,
+        user: { include: { school: true } },
         kelas: true,
       },
     });
 
     if (!siswa) {
-      siswa = await prisma.siswa.findUnique({
+      siswa = await prisma.siswa.findFirst({
         where: { nis: nisn },
         include: {
-          user: true,
+          user: { include: { school: true } },
           kelas: true,
         },
       });
@@ -48,11 +48,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if school is active
+    if (!(siswa.user as any).school?.isActive) {
+      return NextResponse.json(
+        { success: false, error: 'Sekolah tidak aktif. Hubungi administrator.' },
+        { status: 403 }
+      );
+    }
+
     // Create session using the same system as regular login
     await createSession({
       userId: siswa.user.id,
       email: siswa.user.email,
       role: siswa.user.role,
+      schoolId: siswa.user.schoolId,
     });
 
     return NextResponse.json({

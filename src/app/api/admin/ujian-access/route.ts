@@ -14,12 +14,14 @@ export async function GET() {
       );
     }
 
-    // Get or create the singleton record
-    let accessControl = await prisma.ujianAccessControl.findFirst();
+    // Get or create the record for this school
+    let accessControl = await prisma.ujianAccessControl.findFirst({
+      where: { schoolId: session.schoolId! },
+    });
 
     if (!accessControl) {
       accessControl = await prisma.ujianAccessControl.create({
-        data: {},
+        data: { schoolId: session.schoolId! },
       });
     }
 
@@ -72,12 +74,15 @@ export async function POST(request: Request) {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 30 * 60 * 1000); // 30 minutes
 
-    // Get or create the singleton record
-    let accessControl = await prisma.ujianAccessControl.findFirst();
+    // Get or create the record for this school
+    let accessControl = await prisma.ujianAccessControl.findFirst({
+      where: { schoolId: session.schoolId! },
+    });
 
     if (!accessControl) {
       accessControl = await prisma.ujianAccessControl.create({
         data: {
+          schoolId: session.schoolId!,
           isActive: true,
           currentToken: token,
           tokenGeneratedAt: now,
@@ -129,7 +134,9 @@ export async function PUT() {
       );
     }
 
-    const accessControl = await prisma.ujianAccessControl.findFirst();
+    const accessControl = await prisma.ujianAccessControl.findFirst({
+      where: { schoolId: session.schoolId! },
+    });
 
     if (!accessControl) {
       return NextResponse.json(

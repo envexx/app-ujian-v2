@@ -1,24 +1,17 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { PrismaNeon } from '@prisma/adapter-neon';
+import { neonConfig, Pool } from '@neondatabase/serverless';
+import ws from 'ws';
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
+neonConfig.webSocketConstructor = ws;
+
+if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
 }
 
-const pool = new Pool({ 
-  connectionString,
-  ssl: false // Coolify database doesn't support SSL
-});
-
-const adapter = new PrismaPg(pool);
-
-/**
- * FIX: Kita menggunakan 'as any' di sini untuk melewati pengecekan strict TypeScript 
- * saat build di environment CI/Docker jika engine prisma belum ter-generate sempurna.
- */
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaNeon(pool);
 const prisma = new PrismaClient({ adapter } as any);
 
 async function main() {

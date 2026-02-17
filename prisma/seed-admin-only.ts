@@ -1,18 +1,16 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { PrismaNeon } from '@prisma/adapter-neon';
+import { neonConfig, Pool } from '@neondatabase/serverless';
+import ws from 'ws';
 import * as bcrypt from 'bcryptjs';
 
-const connectionString = process.env.DATABASE_URL;
-console.log('🔗 Connecting to database...');
+neonConfig.webSocketConstructor = ws;
 
-const pool = new Pool({ 
-  connectionString,
-  ssl: false
-});
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+console.log('🔗 Connecting to Neon database...');
 
-const adapter = new PrismaPg(pool);
+const adapter = new PrismaNeon(pool);
 const prisma = new PrismaClient({ adapter } as any);
 
 async function main() {
@@ -29,10 +27,19 @@ async function main() {
     return;
   }
 
+  // Find or create school
+  let school = await prisma.school.findFirst();
+  if (!school) {
+    school = await prisma.school.create({
+      data: { nama: 'SMP Negeri 1 Jakarta', isActive: true },
+    });
+  }
+
   // Create admin user
   console.log('👤 Creating admin user...');
   const adminUser = await prisma.user.create({
     data: {
+      schoolId: school.id,
       email: 'admin@school.com',
       password: await bcrypt.hash('admin123', 10),
       role: 'ADMIN',

@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { includes } from '@/lib/query-helpers';
+import { getSession } from '@/lib/session';
 
 export async function GET(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const tanggalParam = searchParams.get('tanggal');
     const startDateParam = searchParams.get('startDate');
@@ -33,6 +39,7 @@ export async function GET(request: Request) {
     
     const presensi = await prisma.presensi.findMany({
       where: {
+        siswa: { schoolId: session.schoolId },
         tanggal: {
           gte: startOfDay,
           lte: endOfDay,
@@ -65,7 +72,18 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
+
+    // Verify siswa belongs to this school
+    const siswa = await prisma.siswa.findFirst({ where: { id: body.siswaId, schoolId: session.schoolId } });
+    if (!siswa) {
+      return NextResponse.json({ success: false, error: 'Siswa tidak ditemukan' }, { status: 404 });
+    }
     
     // Create new presensi
     const presensi = await prisma.presensi.create({
@@ -100,6 +118,11 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     
     if (!body.id) {

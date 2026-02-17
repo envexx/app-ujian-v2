@@ -1,12 +1,26 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getSession } from '@/lib/session';
 
 export async function GET() {
   try {
-    console.log('Fetching school info...');
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          nama: 'E-Learning System',
+          logo: null,
+          alamat: null,
+          telepon: null,
+          email: null,
+        },
+      });
+    }
     
-    // Get the first school record (assuming single school system)
+    // Get school info for the logged-in user's school
     const school = await prisma.sekolahInfo.findFirst({
+      where: { schoolId: session.schoolId },
       select: {
         namaSekolah: true,
         logo: true,

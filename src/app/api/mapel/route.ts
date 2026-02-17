@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getSession } from '@/lib/session';
 
 export async function GET() {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const mapel = await prisma.mataPelajaran.findMany({
+      where: { schoolId: session.schoolId },
       include: {
         _count: {
           select: { guru: true },
@@ -27,10 +34,15 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     
     const newMapel = await prisma.mataPelajaran.create({
-      data: body,
+      data: { ...body, schoolId: session.schoolId },
     });
     
     return NextResponse.json({
@@ -49,6 +61,11 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, ...data } = body;
     
@@ -57,6 +74,11 @@ export async function PUT(request: Request) {
         { success: false, error: 'ID is required' },
         { status: 400 }
       );
+    }
+
+    const existing = await prisma.mataPelajaran.findFirst({ where: { id, schoolId: session.schoolId } });
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Mapel tidak ditemukan' }, { status: 404 });
     }
     
     const updatedMapel = await prisma.mataPelajaran.update({
@@ -80,6 +102,11 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     
@@ -88,6 +115,11 @@ export async function DELETE(request: Request) {
         { success: false, error: 'ID is required' },
         { status: 400 }
       );
+    }
+
+    const existing = await prisma.mataPelajaran.findFirst({ where: { id, schoolId: session.schoolId } });
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Mapel tidak ditemukan' }, { status: 404 });
     }
     
     await prisma.mataPelajaran.delete({

@@ -1,80 +1,51 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { PrismaNeon } from '@prisma/adapter-neon';
+import { neonConfig, Pool } from '@neondatabase/serverless';
+import ws from 'ws';
+
+// Required for Node.js runtime (non-edge) — Neon uses WebSockets
+neonConfig.webSocketConstructor = ws;
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
-  pool: Pool | undefined;
 };
 
-// Create connection pool with limits to prevent memory leak
-// For Coolify databases, SSL might not be required
-const pool = globalForPrisma.pool ?? new Pool({ 
-  connectionString: process.env.DATABASE_URL,
-  // Disable SSL for Coolify (set to false if SSL is not supported)
-  // Set to { rejectUnauthorized: false } if SSL is required
-  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  // Connection pool limits (optimal for VPS 2-4GB RAM with 300 users)
-  max: 10,                        // Maximum 10 concurrent connections
-  idleTimeoutMillis: 30000,       // Close idle connections after 30 seconds
-  connectionTimeoutMillis: 5000,  // Timeout if can't get connection in 5 seconds
-});
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaNeon(pool);
 
-// Create adapter
-const adapter = new PrismaPg(pool);
-
-/**
- * FIX: Using 'as any' to bypass TypeScript strict checking
- * due to version mismatch between @prisma/adapter-pg v7 and @prisma/client v6
- */
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-  
-  // Query optimization
   errorFormat: 'minimal',
 } as any);
 
-// Graceful shutdown - close connections properly
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
-  globalForPrisma.pool = pool;
 }
 
-// Handle graceful shutdown for multiple scenarios
+// Graceful shutdown
 const gracefulShutdown = async (signal: string) => {
   console.log(`\n${signal} received. Closing Prisma connection...`);
   await prisma.$disconnect();
-  await pool.end();
-  console.log('Prisma connection closed successfully.');
   process.exit(0);
 };
 
-// Handle different shutdown signals
 process.on('beforeExit', async () => {
   await prisma.$disconnect();
-  await pool.end();
 });
 
-// Handle SIGTERM (Docker, Kubernetes, PM2)
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-
-// Handle SIGINT (Ctrl+C)
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Handle uncaught exceptions
 process.on('uncaughtException', async (error) => {
   console.error('Uncaught Exception:', error);
   await prisma.$disconnect();
-  await pool.end();
   process.exit(1);
 });
 
-// Handle unhandled promise rejections
 process.on('unhandledRejection', async (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
   await prisma.$disconnect();
-  await pool.end();
   process.exit(1);
 });
 

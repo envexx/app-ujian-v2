@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getSession } from '@/lib/session';
 
 export async function GET(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const kelasFilter = searchParams.get('kelas');
     const mapelId = searchParams.get('mapel');
@@ -10,6 +16,7 @@ export async function GET(request: Request) {
     
     const materi = await prisma.materi.findMany({
       where: {
+        schoolId: session.schoolId,
         ...(kelasFilter && kelasFilter !== 'all' ? {
           kelas: { has: kelasFilter }
         } : {}),
@@ -38,10 +45,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     
     const newMateri = await prisma.materi.create({
-      data: body,
+      data: { ...body, schoolId: session.schoolId },
       include: {
         mapel: true,
         guru: true,

@@ -72,9 +72,10 @@ export async function GET(request: Request) {
       });
     }
 
-    // Get siswa in selected kelas
+    // Get siswa in selected kelas (same school)
     const siswa = await prisma.siswa.findMany({
       where: {
+        schoolId: guru.schoolId,
         kelasId: kelasId,
       },
       include: {

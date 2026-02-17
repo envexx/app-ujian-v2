@@ -146,6 +146,7 @@ export async function POST(request: Request) {
     // Create tugas
     const tugas = await prisma.tugas.create({
       data: {
+        schoolId: guru.schoolId,
         judul,
         deskripsi,
         instruksi,

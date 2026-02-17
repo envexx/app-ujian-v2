@@ -22,68 +22,61 @@ export async function POST(request: Request) {
     }
 
     const todayStart = getStartOfDayIndonesia();
-    
-    // Get all students
-    const allSiswa = await prisma.siswa.findMany({
-      select: {
-        id: true,
-        nisn: true,
-        nama: true,
-        kelasId: true,
-      },
-    });
 
-    // Get students who already have presensi today
-    const todayPresensi = await prisma.presensi.findMany({
-      where: {
-        tanggal: {
-          gte: todayStart,
-        },
-      },
-      select: {
-        siswaId: true,
-      },
-    });
+    // Get all schools to process per-tenant
+    const schools = await prisma.school.findMany({ select: { id: true, nama: true } });
 
-    // Create a Set of siswaIds who already have presensi
-    const presentSiswaIds = new Set(todayPresensi.map(p => p.siswaId));
+    let totalStudents = 0;
+    let totalPresent = 0;
+    let totalAbsent = 0;
+    let totalMarked = 0;
 
-    // Filter students who don't have presensi yet (absent)
-    const absentSiswa = allSiswa.filter(siswa => !presentSiswaIds.has(siswa.id));
-
-    if (absentSiswa.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: 'All students have been marked for attendance',
-        totalStudents: allSiswa.length,
-        absentCount: 0,
+    for (const school of schools) {
+      // Get all students for this school
+      const allSiswa = await prisma.siswa.findMany({
+        where: { schoolId: school.id },
+        select: { id: true, nisn: true, nama: true },
       });
+
+      // Get students who already have presensi today
+      const todayPresensi = await prisma.presensi.findMany({
+        where: {
+          siswa: { schoolId: school.id },
+          tanggal: { gte: todayStart },
+        },
+        select: { siswaId: true },
+      });
+
+      const presentSiswaIds = new Set(todayPresensi.map(p => p.siswaId));
+      const absentSiswa = allSiswa.filter(siswa => !presentSiswaIds.has(siswa.id));
+
+      if (absentSiswa.length > 0) {
+        const alphaRecords = await prisma.presensi.createMany({
+          data: absentSiswa.map(siswa => ({
+            siswaId: siswa.id,
+            tanggal: now,
+            status: 'alpha',
+            keterangan: 'Auto-marked as ALPHA - tidak hadir sebelum jam 09:00',
+          })),
+        });
+        totalMarked += alphaRecords.count;
+      }
+
+      totalStudents += allSiswa.length;
+      totalPresent += presentSiswaIds.size;
+      totalAbsent += absentSiswa.length;
     }
 
-    // Create ALPHA presensi records for absent students
-    const alphaRecords = await prisma.presensi.createMany({
-      data: absentSiswa.map(siswa => ({
-        siswaId: siswa.id,
-        tanggal: now,
-        status: 'alpha',
-        keterangan: 'Auto-marked as ALPHA - tidak hadir sebelum jam 09:00',
-      })),
-    });
-
-    console.log(`Auto-marked ${alphaRecords.count} students as ALPHA at ${now.toISOString()}`);
+    console.log(`Auto-marked ${totalMarked} students as ALPHA at ${now.toISOString()}`);
 
     return NextResponse.json({
       success: true,
-      message: `Successfully marked ${alphaRecords.count} students as ALPHA`,
-      totalStudents: allSiswa.length,
-      presentCount: presentSiswaIds.size,
-      absentCount: absentSiswa.length,
-      markedAsAlpha: alphaRecords.count,
+      message: `Successfully marked ${totalMarked} students as ALPHA`,
+      totalStudents,
+      presentCount: totalPresent,
+      absentCount: totalAbsent,
+      markedAsAlpha: totalMarked,
       executedAt: now.toISOString(),
-      absentStudents: absentSiswa.map(s => ({
-        nisn: s.nisn,
-        nama: s.nama,
-      })),
     });
   } catch (error) {
     console.error('Error in auto-alpha marking:', error);
@@ -107,49 +100,46 @@ export async function GET() {
     const now = getCurrentDateIndonesia();
     const todayStart = getStartOfDayIndonesia();
     
-    // Get all students
-    const allSiswa = await prisma.siswa.findMany({
-      select: {
-        id: true,
-        nisn: true,
-        nama: true,
-      },
-    });
+    // Aggregate across all schools
+    const schools = await prisma.school.findMany({ select: { id: true } });
+    let totalStudents = 0;
+    let totalPresent = 0;
+    let totalAbsent = 0;
+    const breakdown = { hadir: 0, izin: 0, sakit: 0, alpha: 0 };
 
-    // Get students who already have presensi today
-    const todayPresensi = await prisma.presensi.findMany({
-      where: {
-        tanggal: {
-          gte: todayStart,
+    for (const school of schools) {
+      const allSiswa = await prisma.siswa.findMany({
+        where: { schoolId: school.id },
+        select: { id: true },
+      });
+
+      const todayPresensi = await prisma.presensi.findMany({
+        where: {
+          siswa: { schoolId: school.id },
+          tanggal: { gte: todayStart },
         },
-      },
-      select: {
-        siswaId: true,
-        status: true,
-      },
-    });
+        select: { siswaId: true, status: true },
+      });
 
-    const presentSiswaIds = new Set(todayPresensi.map(p => p.siswaId));
-    const absentSiswa = allSiswa.filter(siswa => !presentSiswaIds.has(siswa.id));
+      const presentSiswaIds = new Set(todayPresensi.map(p => p.siswaId));
+      totalStudents += allSiswa.length;
+      totalPresent += presentSiswaIds.size;
+      totalAbsent += allSiswa.filter(s => !presentSiswaIds.has(s.id)).length;
+      breakdown.hadir += todayPresensi.filter(p => p.status === 'hadir').length;
+      breakdown.izin += todayPresensi.filter(p => p.status === 'izin').length;
+      breakdown.sakit += todayPresensi.filter(p => p.status === 'sakit').length;
+      breakdown.alpha += todayPresensi.filter(p => p.status === 'alpha').length;
+    }
 
     return NextResponse.json({
       success: true,
       currentTime: now.toISOString(),
       currentHour: now.getHours(),
       shouldRunAutoAlpha: now.getHours() >= 9,
-      totalStudents: allSiswa.length,
-      presentCount: presentSiswaIds.size,
-      absentCount: absentSiswa.length,
-      absentStudents: absentSiswa.map(s => ({
-        nisn: s.nisn,
-        nama: s.nama,
-      })),
-      presensiBreakdown: {
-        hadir: todayPresensi.filter(p => p.status === 'hadir').length,
-        izin: todayPresensi.filter(p => p.status === 'izin').length,
-        sakit: todayPresensi.filter(p => p.status === 'sakit').length,
-        alpha: todayPresensi.filter(p => p.status === 'alpha').length,
-      },
+      totalStudents,
+      presentCount: totalPresent,
+      absentCount: totalAbsent,
+      presensiBreakdown: breakdown,
     });
   } catch (error) {
     console.error('Error checking auto-alpha status:', error);

@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getSession } from '@/lib/session';
 
 export async function GET() {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     // Get recent activities from different tables
     const [recentSiswa, recentKelas, recentUjian] = await Promise.all([
       prisma.siswa.findMany({
+        where: { schoolId: session.schoolId },
         orderBy: { createdAt: 'desc' },
         take: 3,
         select: {
@@ -15,6 +22,7 @@ export async function GET() {
         },
       }),
       prisma.kelas.findMany({
+        where: { schoolId: session.schoolId },
         orderBy: { updatedAt: 'desc' },
         take: 3,
         select: {
@@ -24,6 +32,7 @@ export async function GET() {
         },
       }),
       prisma.ujian.findMany({
+        where: { schoolId: session.schoolId },
         orderBy: { createdAt: 'desc' },
         take: 3,
         select: {

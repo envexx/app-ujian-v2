@@ -5,7 +5,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Skip middleware for public routes (root is now login siswa page)
-  if (pathname === '/' || pathname.startsWith('/admin-guru') || pathname.startsWith('/api/auth')) {
+  if (pathname === '/' || pathname.startsWith('/admin-guru') || pathname.startsWith('/api/auth') || pathname.startsWith('/superadmin')) {
     return NextResponse.next();
   }
 

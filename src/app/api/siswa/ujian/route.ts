@@ -36,7 +36,9 @@ export async function GET(request: Request) {
     
     try {
       // @ts-ignore - Prisma client might not have loaded new model yet
-      accessControl = await prisma.ujianAccessControl?.findFirst();
+      accessControl = await prisma.ujianAccessControl?.findFirst({
+        where: { schoolId: siswa.schoolId },
+      });
       
       // Check if access control is active and token is valid
       isAccessActive = !!(accessControl && 
@@ -52,10 +54,11 @@ export async function GET(request: Request) {
     // Note: We don't return empty array here
     // Access control only affects starting NEW exams, not viewing completed ones
 
-    // Get ujian for siswa's kelas
+    // Get ujian for siswa's kelas (same school)
     // SECURITY: Use select to prevent sending jawabanBenar to client
     const ujian = await prisma.ujian.findMany({
       where: {
+        schoolId: siswa.schoolId,
         kelas: {
           has: siswa.kelas.nama,
         },

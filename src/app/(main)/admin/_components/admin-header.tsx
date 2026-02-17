@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, LogOut, User } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogOut, User, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,41 +11,43 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
+import { NotificationBell } from "@/components/notification-bell";
 
 export function AdminHeader() {
+  const router = useRouter();
   const { user, logout } = useAuth();
 
   const displayName = user?.profile?.nama || user?.email || "Admin";
-  const displayRole = user?.role || "Administrator";
+  const profilePhoto = user?.profile?.foto || null;
 
   return (
     <div className="flex items-center gap-2">
-      <Button variant="ghost" size="icon">
-        <Bell className="w-4 h-4" />
-      </Button>
+      <NotificationBell />
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="gap-2">
+          <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
             <Avatar className="w-8 h-8">
-              <AvatarFallback className="bg-gradient-to-br from-[#0221CD] to-[#0221CD]/80 text-white">
+              <AvatarImage src={profilePhoto || undefined} className="object-cover" />
+              <AvatarFallback className="bg-gradient-to-br from-[#0221CD] to-[#0221CD]/80 text-white text-xs">
                 {displayName.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
-            <div className="hidden md:flex flex-col items-start text-sm">
-              <span className="font-medium">{displayName}</span>
-              <span className="text-xs text-muted-foreground">{displayRole}</span>
-            </div>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>Akun Saya</DropdownMenuLabel>
+          <DropdownMenuLabel className="font-normal">
+            <div className="flex flex-col space-y-1">
+              <p className="text-sm font-medium leading-none">{displayName}</p>
+              <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+            </div>
+          </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>
-            <User className="w-4 h-4 mr-2" />
-            Profil
+          <DropdownMenuItem onClick={() => router.push('/admin/settings')}>
+            <Settings className="w-4 h-4 mr-2" />
+            Pengaturan
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={logout} className="text-red-600">

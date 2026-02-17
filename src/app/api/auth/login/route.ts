@@ -47,11 +47,24 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create session
+    // Check if school is active (multi-tenancy)
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+    });
+
+    if (!school || !school.isActive) {
+      return NextResponse.json(
+        { success: false, error: 'Sekolah Anda sedang tidak aktif. Hubungi administrator platform.' },
+        { status: 403 }
+      );
+    }
+
+    // Create session with schoolId
     await createSession({
       userId: user.id,
       email: user.email,
       role: user.role,
+      schoolId: user.schoolId,
     });
 
     // Get profile data based on role

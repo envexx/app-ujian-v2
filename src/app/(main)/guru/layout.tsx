@@ -1,6 +1,7 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { GuruSidebar } from "./_components/guru-sidebar";
 import { GuruHeader } from "./_components/guru-header";
+import { AIChatBubble } from "@/components/ai-chatbot/chat-bubble";
 
 export default function GuruLayout({
   children,
@@ -18,6 +19,7 @@ export default function GuruLayout({
           </div>
         </div>
       </main>
+      <AIChatBubble />
     </SidebarProvider>
   );
 }

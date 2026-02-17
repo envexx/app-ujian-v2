@@ -28,8 +28,8 @@ export async function GET(
       );
     }
 
-    const tugas = await prisma.tugas.findUnique({
-      where: { id },
+    const tugas = await prisma.tugas.findFirst({
+      where: { id, schoolId: siswa.schoolId },
       include: {
         mapel: true,
         submissions: {
@@ -122,9 +122,9 @@ export async function POST(
       );
     }
 
-    // Check if tugas exists
-    const tugas = await prisma.tugas.findUnique({
-      where: { id },
+    // Check if tugas exists (same school)
+    const tugas = await prisma.tugas.findFirst({
+      where: { id, schoolId: siswa.schoolId },
     });
 
     if (!tugas) {

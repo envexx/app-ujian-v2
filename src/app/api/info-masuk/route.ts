@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getSession } from '@/lib/session';
 
 export async function GET(request: Request) {
   try {
@@ -22,7 +23,13 @@ export async function GET(request: Request) {
       );
     }
 
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const infoMasuk = await prisma.infoMasuk.findMany({
+      where: { schoolId: session.schoolId },
       orderBy: {
         hari: 'asc',
       },
@@ -51,6 +58,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     if (!prisma?.infoMasuk) {
       return NextResponse.json(
         { success: false, error: 'Database model not available. Please restart the server after running: npx prisma generate' },
@@ -69,12 +81,13 @@ export async function POST(request: Request) {
     }
 
     const infoMasuk = await prisma.infoMasuk.upsert({
-      where: { hari },
+      where: { schoolId_hari: { schoolId: session.schoolId!, hari } },
       update: {
         jamMasuk,
         jamPulang,
       },
       create: {
+        schoolId: session.schoolId!,
         hari,
         jamMasuk,
         jamPulang,
@@ -101,6 +114,11 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     if (!prisma?.infoMasuk) {
       return NextResponse.json(
         { success: false, error: 'Database model not available. Please restart the server after running: npx prisma generate' },
@@ -147,6 +165,11 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.schoolId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     if (!prisma?.infoMasuk) {
       return NextResponse.json(
         { success: false, error: 'Database model not available. Please restart the server after running: npx prisma generate' },

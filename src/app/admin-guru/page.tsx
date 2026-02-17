@@ -198,8 +198,13 @@ export default function AdminGuruLoginPage() {
               {isLoading ? "Memproses..." : "Masuk"}
             </Button>
 
-            <div className="text-sm text-center text-muted-foreground mt-4">
-              <p className="font-medium">Gunakan email yang terdaftar di sistem</p>
+            <div className="text-center mt-2">
+              <a
+                href="/admin-guru/forgot-password"
+                className="text-sm text-primary hover:underline"
+              >
+                Lupa Password?
+              </a>
             </div>
 
             <div className="text-center mt-4 pt-4 border-t">
