@@ -2,6 +2,110 @@
 
 Semua perubahan penting pada proyek ini didokumentasikan di file ini.
 
+Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.0.0/).
+
+---
+
+## [3.0.0] - 2025-06-XX
+
+### Arsitektur Baru — Multi-Tenant SaaS
+
+#### Multi-Tenancy
+- Arsitektur **shared database, shared schema** multi-tenancy
+- Setiap sekolah (tenant) diidentifikasi oleh `schoolId` di semua tabel tenant-level
+- Model `School` sebagai entitas tenant utama dengan relasi ke `Tier`
+- Semua query database pada tenant-level difilter berdasarkan `schoolId` dari session
+- **46 API route files** diaudit dan dipastikan memiliki filter `schoolId` yang benar (~25 route diperbaiki)
+
+#### Portal SuperAdmin (Platform-Level)
+- Login terpisah di `/superadmin/login` dengan model `SuperAdmin`
+- **Dashboard Platform** — statistik total sekolah, user, guru, siswa di seluruh platform
+- **Kelola Sekolah** — CRUD sekolah (tenant), assign tier, aktivasi/nonaktifkan
+- **Kelola Tier** — CRUD paket langganan dengan limit resource dan feature flags
+- **Notifikasi Platform** — kirim notifikasi ke sekolah tertentu atau semua sekolah
+- **Broadcast Email** — kirim email massal ke sekolah via SMTP
+- **Landing Media** — kelola gambar/media untuk halaman landing page
+- **Pengaturan SMTP** — konfigurasi SMTP server untuk email (host, port, user, pass)
+- Layout dan navigasi SuperAdmin terpisah dari tenant
+
+#### Sistem Tier / Langganan
+- 5 tier: Trial, Starter, Basic, Professional, Enterprise
+- Limit resource per tier: maxSiswa, maxGuru, maxKelas, maxMapel, maxUjian, maxStorage
+- Feature flags per tier (JSON): aiChatbot, documentParsing, advancedAnalytics, dll
+- Tier limit enforcement di `src/lib/tier-limits.ts`
+- Public API `/api/public/tiers` untuk halaman pricing
+
+#### Landing Page
+- Halaman marketing publik di `/landing`
+- Hero section, fitur showcase, pricing/tier, testimonial, FAQ, contact (WhatsApp)
+- Media gambar dinamis dikelola oleh SuperAdmin via Landing Media
+- Responsive design
+
+### Fitur Baru
+
+#### Sistem Notifikasi Platform
+- Model `PlatformNotification` dengan type (info, warning, update, maintenance, promo) dan priority (urgent, high, normal, low)
+- Komponen `notification-bell.tsx` — real-time notification bell dengan badge count
+- Dropdown list notifikasi dengan tipe & prioritas
+- Mark as read per notifikasi
+- Model `FailedNotification` untuk logging notifikasi gagal
+- API endpoints: GET `/api/notifications`, PUT `/api/notifications/[id]/read`
+
+#### Broadcast Email
+- SuperAdmin dapat mengirim email massal ke sekolah tertentu atau semua sekolah
+- Subject + body (HTML) via SMTP (Nodemailer)
+- Konfigurasi SMTP dari database (model `SmtpConfig`)
+- History tersimpan di model `BroadcastEmail`
+
+#### Password Reset Flow
+- Halaman `/forgot-password` untuk input email
+- API: POST `/api/password-reset/request` — generate token, kirim email
+- Model `PasswordResetToken` dengan expiry (1 jam) dan status used
+- Halaman `/reset-password?token=xxx` untuk input password baru
+- API: POST `/api/password-reset/reset` — validasi token, update password
+- Email dikirim via SMTP menggunakan `SmtpConfig` dari database
+
+#### Profile Photo
+- Upload foto profil dari file atau webcam
+- Crop menggunakan `react-image-crop`
+- Simpan ke Cloudflare R2 / AWS S3
+- Field `profilePhoto` pada model `User`
+- API endpoint: POST `/api/profile-photo`
+
+#### Cron Jobs
+- `/api/cron/auto-alpha` — otomatis set status "alpha" untuk siswa yang tidak presensi
+- Dijalankan per sekolah (multi-tenant aware)
+- Autentikasi via `CRON_SECRET`
+
+### Perbaikan
+
+#### Tenant Isolation Audit
+- Audit komprehensif terhadap 46 API route files
+- ~25 route diperbaiki dengan penambahan filter `schoolId` di WHERE clause
+- Route yang diperbaiki termasuk: siswa, guru, kelas, mapel, dashboard stats/activities, presensi, materi, kartu-pelajar, sekolah-info, info-masuk, admin/ujian-access, admin/siswa/import, guru/nilai, guru/tugas/[id], guru/ujian/[id]/nilai, presensi/scan, presensi/auto-alpha, siswa/ujian, siswa/tugas, siswa/materi
+- Route yang sudah benar (menggunakan guruId/siswaId dari session): guru/ujian, guru/tugas, guru/materi, guru/jadwal, guru/dashboard, siswa/raport
+
+### Database
+
+#### Model Baru
+- `School` — tenant (sekolah) dengan name, domain, isActive, tierId
+- `SuperAdmin` — akun platform admin
+- `Tier` — paket langganan dengan limit resource dan feature flags
+- `SmtpConfig` — konfigurasi SMTP server
+- `PlatformNotification` — notifikasi platform dengan type dan priority
+- `BroadcastEmail` — email massal dengan subject, body, targetSchoolIds
+- `PasswordResetToken` — token reset password dengan expiry
+- `LandingMedia` — media landing page dengan title, imageUrl, order
+- `FailedNotification` — log notifikasi gagal
+
+#### Perubahan Model
+- `User` — ditambahkan field `schoolId` (tenant isolation) dan `profilePhoto`
+- `Guru`, `Siswa`, `Kelas`, `MataPelajaran`, `Ujian`, `Tugas`, `Materi` — ditambahkan field `schoolId`
+- `UjianAccessControl`, `SekolahInfo`, `InfoMasuk`, `Jadwal` — ditambahkan field `schoolId`
+- Session data ditambahkan `schoolId` untuk tenant filtering
+
+---
+
 ## [2.3.0] - 2025-02-13
 
 ### Fitur Baru

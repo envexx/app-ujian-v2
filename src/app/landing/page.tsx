@@ -96,7 +96,7 @@ const FAQS = [
   },
   {
     q: "Bagaimana cara mendaftar dan membuat akun sekolah?",
-    a: "Hubungi tim kami via WhatsApp untuk proses pendaftaran dan pembayaran. Setelah pembayaran dikonfirmasi, akun sekolah Anda akan langsung aktif dan siap digunakan.",
+    a: "Anda bisa langsung daftar gratis melalui halaman registrasi di website kami — akun admin sekolah langsung aktif dengan paket Trial. Untuk paket premium, hubungi tim kami via WhatsApp.",
   },
   {
     q: "Apakah bisa digunakan untuk PTS, PAS, dan ujian semester?",
@@ -162,7 +162,7 @@ function Navbar() {
 
         <div className="hidden md:flex items-center gap-3">
           <Link
-            href="/admin-guru"
+            href="/login"
             className={cn(
               "text-sm font-medium px-4 py-2 rounded-lg transition-colors",
               scrolled ? "text-gray-700 hover:text-[#0221CD]" : "text-white/90 hover:text-white"
@@ -170,15 +170,12 @@ function Navbar() {
           >
             Masuk
           </Link>
-          <a
-            href={WA_LINK}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg bg-[#25D366] text-white hover:bg-[#1fb855] transition-colors shadow-lg shadow-green-500/25"
+          <Link
+            href="/register"
+            className="inline-flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg bg-white text-[#0221CD] hover:bg-blue-50 transition-colors shadow-lg shadow-white/25"
           >
-            <MessageCircle className="w-4 h-4" />
-            Hubungi Kami
-          </a>
+            Daftar Gratis
+          </Link>
         </div>
 
         <button className="md:hidden p-2" onClick={() => setMobileOpen(!mobileOpen)}>
@@ -204,13 +201,12 @@ function Navbar() {
               </a>
             ))}
             <div className="pt-3 mt-3 border-t border-gray-100 space-y-2">
-              <Link href="/admin-guru" className="block w-full text-center px-4 py-2.5 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50">
+              <Link href="/login" className="block w-full text-center px-4 py-2.5 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50">
                 Masuk
               </Link>
-              <a href={WA_LINK} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full px-4 py-2.5 text-sm font-medium text-white bg-[#25D366] rounded-lg hover:bg-[#1fb855]">
-                <MessageCircle className="w-4 h-4" />
-                Hubungi Kami
-              </a>
+              <Link href="/register" className="block w-full text-center px-4 py-2.5 text-sm font-medium text-white bg-[#0221CD] rounded-lg hover:bg-[#0221CD]/90">
+                Daftar Gratis
+              </Link>
             </div>
           </div>
         </div>
@@ -383,6 +379,13 @@ export default function LandingPage() {
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link
+                href="/register"
+                className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-white text-[#0221CD] font-semibold text-sm hover:bg-blue-50 transition-colors shadow-xl shadow-white/20"
+              >
+                Daftar Gratis
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
               <a
                 href={WA_LINK}
                 target="_blank"
@@ -390,8 +393,7 @@ export default function LandingPage() {
                 className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-[#25D366] text-white font-semibold text-sm hover:bg-[#1fb855] transition-colors shadow-xl shadow-green-500/20"
               >
                 <MessageCircle className="w-4 h-4" />
-                Daftar via WhatsApp
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                Hubungi via WhatsApp
               </a>
               <a
                 href="#fitur"
@@ -535,7 +537,7 @@ export default function LandingPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { step: "01", title: "Hubungi Kami", desc: "Chat via WhatsApp untuk konsultasi, pilih paket, dan proses pembayaran. Akun sekolah langsung dibuatkan." },
+              { step: "01", title: "Daftar Sekolah", desc: "Daftar gratis langsung di website atau hubungi kami via WhatsApp untuk paket premium. Akun admin sekolah langsung aktif." },
               { step: "02", title: "Setup Sekolah", desc: "Import data guru, siswa, dan kelas. Bisa manual atau bulk import via Excel. Selesai dalam hitungan menit." },
               { step: "03", title: "Mulai Ujian Online", desc: "Buat ujian online dan pantau hasil nilai siswa secara real-time dari dashboard." },
             ].map((item) => (
@@ -710,20 +712,30 @@ export default function LandingPage() {
                         ))}
                       </div>
 
-                      <a
-                        href={getWaLinkForTier(tier.label)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={cn(
-                          "flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-colors",
-                          isPopular
-                            ? "bg-[#25D366] text-white hover:bg-[#1fb855] shadow-lg shadow-green-500/20"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        )}
-                      >
-                        <MessageCircle className="w-4 h-4" />
-                        {tier.harga === 0 ? "Coba Gratis" : `Pilih ${tier.label}`}
-                      </a>
+                      {tier.harga === 0 ? (
+                        <Link
+                          href="/register"
+                          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold bg-[#0221CD] text-white hover:bg-[#0221CD]/90 transition-colors shadow-lg shadow-blue-500/20"
+                        >
+                          <UserCheck className="w-4 h-4" />
+                          Daftar Gratis Sekarang
+                        </Link>
+                      ) : (
+                        <a
+                          href={getWaLinkForTier(tier.label)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={cn(
+                            "flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-colors",
+                            isPopular
+                              ? "bg-[#25D366] text-white hover:bg-[#1fb855] shadow-lg shadow-green-500/20"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          )}
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          Pilih {tier.label}
+                        </a>
+                      )}
                     </div>
                   );
                 })}

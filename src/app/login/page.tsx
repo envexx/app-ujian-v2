@@ -196,7 +196,7 @@ export default function LoginPage() {
               <p className="font-medium">Gunakan email yang terdaftar di sistem</p>
             </div>
 
-            <div className="text-center mt-4 pt-4 border-t">
+            <div className="text-center mt-4 pt-4 border-t space-y-2">
               <p className="text-sm text-muted-foreground">
                 Siswa?{" "}
                 <a 
@@ -204,6 +204,15 @@ export default function LoginPage() {
                   className="text-primary hover:underline font-medium"
                 >
                   Login dengan NISN
+                </a>
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Belum terdaftar?{" "}
+                <a 
+                  href="/register" 
+                  className="text-primary hover:underline font-medium"
+                >
+                  Daftar Sekolah Baru (Gratis)
                 </a>
               </p>
             </div>

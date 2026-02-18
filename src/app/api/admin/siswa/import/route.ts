@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { prisma } from '@/lib/prisma';
+import { checkTierLimit } from '@/lib/tier-limits';
 import * as XLSX from 'xlsx';
 import bcrypt from 'bcryptjs';
 
@@ -45,6 +46,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: 'File Excel kosong' },
         { status: 400 }
+      );
+    }
+
+    // Check tier limit before processing
+    const tierCheck = await checkTierLimit(session.schoolId!, 'siswa', data.length);
+    if (!tierCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: `Tidak dapat mengimpor ${data.length} siswa. Batas maksimal siswa untuk tier ${tierCheck.tierLabel} adalah ${tierCheck.max}. Saat ini: ${tierCheck.current}. Sisa kapasitas: ${tierCheck.max - tierCheck.current}. Upgrade tier untuk menambah kapasitas.` },
+        { status: 403 }
       );
     }
 

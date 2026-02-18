@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/session';
+import { checkTierLimit } from '@/lib/tier-limits';
 
 export async function GET(request: Request) {
   try {
@@ -177,6 +178,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: 'Guru not found' },
         { status: 404 }
+      );
+    }
+
+    // Check tier limit
+    const tierCheck = await checkTierLimit(guru.schoolId, 'ujian');
+    if (!tierCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: `Batas maksimal ujian untuk tier ${tierCheck.tierLabel} adalah ${tierCheck.max}. Saat ini: ${tierCheck.current}. Upgrade tier untuk menambah kapasitas.` },
+        { status: 403 }
       );
     }
 

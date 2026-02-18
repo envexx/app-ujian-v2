@@ -225,7 +225,7 @@ model User {
   siswa  Siswa?
   guru   Guru?
 
-  @@index([schoolId])
+  @@index([schoolId, createdAt])
   @@index([email])
   @@index([role])
   @@index([isActive])
@@ -356,7 +356,7 @@ model Guru {
   gradeConfig   GradeConfig?    // Konfigurasi bobot penilaian
 
   @@unique([schoolId, nipUsername])
-  @@index([schoolId])
+  @@index([schoolId, createdAt])
   @@index([nipUsername])
   @@index([email])
   @@index([userId])
@@ -421,7 +421,7 @@ model Siswa {
 
   @@unique([schoolId, nisn])
   @@unique([schoolId, nis])
-  @@index([schoolId])
+  @@index([schoolId, createdAt])
   @@index([nisn])
   @@index([nis])
   @@index([kelasId])
@@ -576,7 +576,7 @@ model Tugas {
   guru        Guru              @relation(fields: [guruId], references: [id], onDelete: Cascade)
   submissions TugasSubmission[]
 
-  @@index([schoolId])
+  @@index([schoolId, createdAt])
   @@index([guruId])
   @@index([mapelId])
   @@index([status])
@@ -636,7 +636,7 @@ model Ujian {
   soal             Soal[]
   submissions      UjianSubmission[]
 
-  @@index([schoolId])
+  @@index([schoolId, createdAt])
   @@index([guruId])
   @@index([mapelId])
   @@index([status])
@@ -692,8 +692,7 @@ model Soal {
   ujian         Ujian              @relation(fields: [ujianId], references: [id], onDelete: Cascade)
   jawaban       JawabanSoal[]
 
-  @@index([ujianId])
-  @@index([urutan])
+  @@index([ujianId, urutan])
   @@index([tipe])
   @@map("soal")
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/session';
+import { checkTierLimit } from '@/lib/tier-limits';
 
 export async function GET() {
   try {
@@ -40,6 +41,15 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+
+    // Check tier limit
+    const tierCheck = await checkTierLimit(session.schoolId, 'mapel');
+    if (!tierCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: `Batas maksimal mata pelajaran untuk tier ${tierCheck.tierLabel} adalah ${tierCheck.max}. Saat ini: ${tierCheck.current}. Upgrade tier untuk menambah kapasitas.` },
+        { status: 403 }
+      );
+    }
     
     const newMapel = await prisma.mataPelajaran.create({
       data: { ...body, schoolId: session.schoolId },
