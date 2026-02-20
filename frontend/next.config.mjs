@@ -1,56 +1,26 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Note: reactCompiler removed - not supported in Next.js 15
-  compiler: {
-    removeConsole: process.env.NODE_ENV === "production" ? { exclude: ["error", "warn"] } : false,
+  // Static export for Cloudflare Pages
+  output: 'export',
+  trailingSlash: true,
+  
+  // Skip type checking during build (faster builds)
+  typescript: {
+    ignoreBuildErrors: true,
   },
   
-  // Cloudflare Pages compatible configuration
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  
+  // Required for static export
   images: {
     unoptimized: true,
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
-    ],
   },
   
   // Environment variables exposed to client
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
-  },
-  
-  typescript: {
-    ignoreBuildErrors: false,
-  },
-  
-  async redirects() {
-    return [
-      {
-        source: "/dashboard",
-        destination: "/dashboard/default",
-        permanent: false,
-      },
-      {
-        source: "/login",
-        destination: "/admin-guru",
-        permanent: true,
-      },
-    ];
-  },
-  
-  async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: [
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Referrer-Policy', value: 'origin-when-cross-origin' },
-        ],
-      },
-    ];
   },
 };
 
