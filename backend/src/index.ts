@@ -1,13 +1,24 @@
-import 'dotenv/config';
 import { Hono } from 'hono';
-import { serve } from '@hono/node-server';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { secureHeaders } from 'hono/secure-headers';
 import { corsMiddleware } from './middleware/cors';
+import { initDb } from './lib/db';
+import { getLucia } from './lib/lucia';
 import routes from './routes';
+import type { HonoEnv } from './env';
 
-const app = new Hono();
+const app = new Hono<HonoEnv>();
+
+// Initialize DB & Lucia from env bindings on every request
+app.use('*', async (c, next) => {
+  const env = c.env;
+  if (env?.DATABASE_URL) {
+    initDb(env.DATABASE_URL);
+    getLucia(env.DATABASE_URL, env.NODE_ENV === 'production');
+  }
+  await next();
+});
 
 // Global middleware
 app.use('*', logger());
@@ -21,6 +32,7 @@ app.get('/', (c) => {
     name: 'LMS Backend API',
     version: '1.0.0',
     status: 'healthy',
+    runtime: 'Cloudflare Workers',
     timestamp: new Date().toISOString(),
   });
 });
@@ -40,26 +52,15 @@ app.notFound((c) => {
 // Error handler
 app.onError((err, c) => {
   console.error('Server error:', err);
+  const isDev = c.env?.NODE_ENV === 'development';
   return c.json(
     {
       error: 'Internal Server Error',
-      message: process.env.NODE_ENV === 'development' ? err.message : 'Terjadi kesalahan server',
+      message: isDev ? err.message : 'Terjadi kesalahan server',
     },
     500
   );
 });
 
-// Start server (for local development)
-const port = parseInt(process.env.PORT || '5000', 10);
-
-console.log(`🚀 LMS Backend starting on port ${port}...`);
-
-serve({
-  fetch: app.fetch,
-  port,
-});
-
-console.log(`✅ Server running at http://localhost:${port}`);
-
-// Export for AWS Lambda
+// Export for Cloudflare Workers
 export default app;

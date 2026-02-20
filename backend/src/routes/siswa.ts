@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { sql } from '../lib/db';
 import { authMiddleware, requireRole, tenantMiddleware } from '../middleware/auth';
 
-const siswa = new Hono();
+const siswa = new Hono<HonoEnv>();
 
 // Apply auth middleware to all routes
 siswa.use('*', authMiddleware, tenantMiddleware);
@@ -142,16 +143,16 @@ siswa.post('/', requireRole('ADMIN'), zValidator('json', createSiswaSchema), asy
 
     // Create User account first
     const newUserResult = await sql`
-      INSERT INTO users ("schoolId", email, password, role, "isActive", "createdAt", "updatedAt")
-      VALUES (${schoolId}, ${autoEmail}, ${hashedPassword}, 'SISWA', true, NOW(), NOW())
+      INSERT INTO users (id, "schoolId", email, password, role, "isActive", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${schoolId}, ${autoEmail}, ${hashedPassword}, 'SISWA', true, NOW(), NOW())
       RETURNING *
     `;
     const newUser = newUserResult[0];
 
     // Create siswa
     const newSiswaResult = await sql`
-      INSERT INTO siswa ("schoolId", "userId", nis, nisn, nama, "kelasId", "jenisKelamin", "tanggalLahir", alamat, "noTelp", "namaWali", "noTelpWali", "createdAt", "updatedAt")
-      VALUES (${schoolId}, ${newUser.id}, ${body.nis}, ${body.nisn}, ${body.nama}, ${body.kelasId}, ${body.jenisKelamin}, ${parsedTanggalLahir}, ${body.alamat || null}, ${body.noTelp || null}, ${body.namaWali || null}, ${body.noTelpWali || null}, NOW(), NOW())
+      INSERT INTO siswa (id, "schoolId", "userId", nis, nisn, nama, "kelasId", "jenisKelamin", "tanggalLahir", alamat, "noTelp", "namaWali", "noTelpWali", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${schoolId}, ${newUser.id}, ${body.nis}, ${body.nisn}, ${body.nama}, ${body.kelasId}, ${body.jenisKelamin}, ${parsedTanggalLahir}, ${body.alamat || null}, ${body.noTelp || null}, ${body.namaWali || null}, ${body.noTelpWali || null}, NOW(), NOW())
       RETURNING *
     `;
 

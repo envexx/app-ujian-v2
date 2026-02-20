@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { sql } from '../lib/db';
 import { authMiddleware, requireRole, tenantMiddleware } from '../middleware/auth';
 
-const bankSoal = new Hono();
+const bankSoal = new Hono<HonoEnv>();
 
 bankSoal.use('*', authMiddleware, tenantMiddleware);
 
@@ -211,8 +212,8 @@ bankSoal.post('/', requireRole('GURU', 'ADMIN'), zValidator('json', createBankSo
     const body = c.req.valid('json');
 
     const result = await sql`
-      INSERT INTO bank_soal ("schoolId", "guruId", "mapelId", tipe, pertanyaan, data, poin, kelas, tags, "createdAt", "updatedAt")
-      VALUES (${guru.schoolId}, ${guru.id}, ${body.mapelId}, ${body.tipe}, ${body.pertanyaan}, 
+      INSERT INTO bank_soal (id, "schoolId", "guruId", "mapelId", tipe, pertanyaan, data, poin, kelas, tags, "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${guru.schoolId}, ${guru.id}, ${body.mapelId}, ${body.tipe}, ${body.pertanyaan}, 
               ${JSON.stringify(body.data)}, ${body.poin}, ${body.kelas || []}, ${body.tags || []}, NOW(), NOW())
       RETURNING *
     `;
@@ -243,8 +244,8 @@ bankSoal.post('/bulk', requireRole('GURU', 'ADMIN'), async (c) => {
     for (const soal of soalList) {
       try {
         await sql`
-          INSERT INTO bank_soal ("schoolId", "guruId", "mapelId", tipe, pertanyaan, data, poin, tags, "createdAt", "updatedAt")
-          VALUES (${guru.schoolId}, ${guru.id}, ${mapelId || soal.mapelId}, ${soal.tipe}, ${soal.pertanyaan}, 
+          INSERT INTO bank_soal (id, "schoolId", "guruId", "mapelId", tipe, pertanyaan, data, poin, tags, "createdAt", "updatedAt")
+          VALUES (gen_random_uuid(), ${guru.schoolId}, ${guru.id}, ${mapelId || soal.mapelId}, ${soal.tipe}, ${soal.pertanyaan}, 
                   ${JSON.stringify(soal.data)}, ${soal.poin || 1}, ${tags || []}, NOW(), NOW())
         `;
         successCount++;
@@ -446,8 +447,8 @@ bankSoal.post('/export-from-ujian', requireRole('GURU', 'ADMIN'), async (c) => {
     for (const soal of soalList) {
       try {
         await sql`
-          INSERT INTO bank_soal ("schoolId", "guruId", "mapelId", tipe, pertanyaan, data, poin, kelas, tags, "createdAt", "updatedAt")
-          VALUES (${guru.schoolId}, ${guru.id}, ${ujian[0].mapelId}, ${soal.tipe}, ${soal.pertanyaan}, 
+          INSERT INTO bank_soal (id, "schoolId", "guruId", "mapelId", tipe, pertanyaan, data, poin, kelas, tags, "createdAt", "updatedAt")
+          VALUES (gen_random_uuid(), ${guru.schoolId}, ${guru.id}, ${ujian[0].mapelId}, ${soal.tipe}, ${soal.pertanyaan}, 
                   ${JSON.stringify(soal.data)}, ${soal.poin}, ${ujianKelas}, ${tags || []}, NOW(), NOW())
         `;
         successCount++;

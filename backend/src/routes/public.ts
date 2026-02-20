@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { sql } from '../lib/db';
 import bcrypt from 'bcryptjs';
 
-const publicRoutes = new Hono();
+const publicRoutes = new Hono<HonoEnv>();
 
 // GET /public/tiers
 publicRoutes.get('/tiers', async (c) => {
@@ -36,16 +37,16 @@ publicRoutes.post('/register', zValidator('json', registerSchema), async (c) => 
     const hashedPassword = await bcrypt.hash(body.password, 10);
 
     const school = await sql`
-      INSERT INTO schools (nama, "tierId", "isActive", "createdAt", "updatedAt")
-      VALUES (${body.namaSekolah}, ${freeTier[0].id}, true, NOW(), NOW()) RETURNING *
+      INSERT INTO schools (id, nama, "tierId", "isActive", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${body.namaSekolah}, ${freeTier[0].id}, true, NOW(), NOW()) RETURNING *
     `;
     const newUser = await sql`
-      INSERT INTO users ("schoolId", email, password, role, "isActive", "createdAt", "updatedAt")
-      VALUES (${school[0].id}, ${body.email}, ${hashedPassword}, 'ADMIN', true, NOW(), NOW()) RETURNING *
+      INSERT INTO users (id, "schoolId", email, password, role, "isActive", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${school[0].id}, ${body.email}, ${hashedPassword}, 'ADMIN', true, NOW(), NOW()) RETURNING *
     `;
     await sql`
-      INSERT INTO sekolah_info ("schoolId", "namaSekolah", alamat, "noTelp", email, "createdAt", "updatedAt")
-      VALUES (${school[0].id}, ${body.namaSekolah}, ${body.alamat || null}, ${body.noTelp || null}, ${body.email}, NOW(), NOW())
+      INSERT INTO sekolah_info (id, "schoolId", "namaSekolah", alamat, "noTelp", email, "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${school[0].id}, ${body.namaSekolah}, ${body.alamat || null}, ${body.noTelp || null}, ${body.email}, NOW(), NOW())
     `;
 
     return c.json({ success: true, message: 'Registrasi berhasil', data: { schoolId: school[0].id, email: newUser[0].email } });

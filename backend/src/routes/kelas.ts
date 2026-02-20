@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { sql } from '../lib/db';
 import { authMiddleware, requireRole, tenantMiddleware } from '../middleware/auth';
 
-const kelas = new Hono();
+const kelas = new Hono<HonoEnv>();
 
 // Apply auth middleware to all routes
 kelas.use('*', authMiddleware, tenantMiddleware);
@@ -92,8 +93,8 @@ kelas.post('/', requireRole('ADMIN'), zValidator('json', createKelasSchema), asy
     const tahunAjaran = body.tahunAjaran || new Date().getFullYear().toString();
 
     const result = await sql`
-      INSERT INTO kelas ("schoolId", nama, tingkat, "waliKelasId", "tahunAjaran", "createdAt", "updatedAt")
-      VALUES (${schoolId}, ${body.nama}, ${body.tingkat}, ${body.waliKelasId || null}, ${tahunAjaran}, NOW(), NOW())
+      INSERT INTO kelas (id, "schoolId", nama, tingkat, "waliKelasId", "tahunAjaran", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${schoolId}, ${body.nama}, ${body.tingkat}, ${body.waliKelasId || null}, ${tahunAjaran}, NOW(), NOW())
       RETURNING *
     `;
 

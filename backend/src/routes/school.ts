@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { sql } from '../lib/db';
+import type { HonoEnv } from '../env';
 
-const school = new Hono();
+const school = new Hono<HonoEnv>();
 
 // GET /school/info - Get school info
 school.get('/info', async (c) => {
@@ -14,7 +15,7 @@ school.get('/info', async (c) => {
       try {
         const token = authHeader.substring(7);
         const { jwtVerify } = await import('jose');
-        const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'default-secret');
+        const secret = new TextEncoder().encode(c.env?.JWT_SECRET || 'default-secret');
         const { payload } = await jwtVerify(token, secret);
         schoolId = payload.schoolId as string;
       } catch {

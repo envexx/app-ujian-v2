@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { sql } from '../lib/db';
 import { authMiddleware, requireRole, tenantMiddleware } from '../middleware/auth';
 
-const guruNilai = new Hono();
+const guruNilai = new Hono<HonoEnv>();
 
 guruNilai.use('*', authMiddleware, tenantMiddleware);
 

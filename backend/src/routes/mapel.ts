@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { sql } from '../lib/db';
 import { authMiddleware, requireRole, tenantMiddleware } from '../middleware/auth';
 
-const mapel = new Hono();
+const mapel = new Hono<HonoEnv>();
 
 // Apply auth middleware to all routes
 mapel.use('*', authMiddleware, tenantMiddleware);
@@ -99,8 +100,8 @@ mapel.post('/', requireRole('ADMIN'), zValidator('json', createMapelSchema), asy
     }
 
     const result = await sql`
-      INSERT INTO mata_pelajaran ("schoolId", nama, kode, jenis, "jamPerMinggu", "createdAt", "updatedAt")
-      VALUES (${schoolId}, ${body.nama}, ${body.kode}, ${body.jenis || 'wajib'}, ${body.jamPerMinggu || 2}, NOW(), NOW())
+      INSERT INTO mata_pelajaran (id, "schoolId", nama, kode, jenis, "jamPerMinggu", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${schoolId}, ${body.nama}, ${body.kode}, ${body.jenis || 'wajib'}, ${body.jamPerMinggu || 2}, NOW(), NOW())
       RETURNING *
     `;
 

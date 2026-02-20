@@ -5,11 +5,14 @@ import { sql } from '../lib/db';
 import bcrypt from 'bcryptjs';
 import { sign, verify, decode } from 'hono/jwt';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import type { HonoEnv } from '../env';
 
-const superadmin = new Hono();
+const superadmin = new Hono<HonoEnv>();
 
-// JWT secret for super admin (separate from regular users)
-const SUPERADMIN_JWT_SECRET = process.env.SUPERADMIN_JWT_SECRET || process.env.JWT_SECRET || 'superadmin-secret-key';
+// Helper to get superadmin JWT secret from env bindings
+function getSASecret(c: any): string {
+  return c.env?.SUPERADMIN_JWT_SECRET || c.env?.JWT_SECRET || 'superadmin-secret-key';
+}
 
 // Middleware to check super admin authentication
 async function requireSuperAdmin(c: any, next: any) {
@@ -28,7 +31,7 @@ async function requireSuperAdmin(c: any, next: any) {
       return c.json({ success: false, error: 'Unauthorized' }, 401);
     }
 
-    const payload = await verify(token, SUPERADMIN_JWT_SECRET, 'HS256');
+    const payload = await verify(token, getSASecret(c), 'HS256');
     if (!payload || payload.role !== 'SUPERADMIN') {
       return c.json({ success: false, error: 'Unauthorized' }, 401);
     }
@@ -78,14 +81,14 @@ superadmin.post('/auth/login', zValidator('json', loginSchema), async (c) => {
         role: 'SUPERADMIN',
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
       },
-      SUPERADMIN_JWT_SECRET
+      getSASecret(c)
     );
 
     // Set cookie for same-origin requests
     setCookie(c, 'superadmin_token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax',
+      secure: c.env?.NODE_ENV === 'production',
+      sameSite: c.env?.NODE_ENV === 'production' ? 'Strict' : 'Lax',
       maxAge: 60 * 60 * 24, // 24 hours
       path: '/',
     });
@@ -128,7 +131,7 @@ superadmin.get('/auth/session', async (c) => {
       return c.json({ isLoggedIn: false });
     }
 
-    const payload = await verify(token, SUPERADMIN_JWT_SECRET, 'HS256');
+    const payload = await verify(token, getSASecret(c), 'HS256');
     console.log('Session check - payload:', payload ? 'valid' : 'invalid');
     
     if (!payload || payload.role !== 'SUPERADMIN') {
@@ -246,6 +249,91 @@ superadmin.get('/schools', requireSuperAdmin, async (c) => {
   } catch (error) {
     console.error('Error fetching schools:', error);
     return c.json({ success: false, error: 'Failed to fetch schools' }, 500);
+  }
+});
+
+// POST /superadmin/schools - Create school
+superadmin.post('/schools', requireSuperAdmin, async (c) => {
+  try {
+    const body = await c.req.json();
+    if (!body.nama) return c.json({ success: false, error: 'Nama sekolah wajib diisi' }, 400);
+
+    // Create school
+    const school = await sql`
+      INSERT INTO schools (nama, npsn, alamat, kota, provinsi, "noTelp", email, website, jenjang, "isActive", "tierId", "expiredAt", "createdAt", "updatedAt")
+      VALUES (${body.nama}, ${body.npsn || null}, ${body.alamat || null}, ${body.kota || null}, ${body.provinsi || null},
+              ${body.noTelp || null}, ${body.email || null}, ${body.website || null}, ${body.jenjang || null},
+              true, ${body.tierId || null}, ${body.expiredAt || null}, NOW(), NOW())
+      RETURNING *
+    `;
+
+    // Create default admin user for this school
+    if (body.adminEmail && body.adminPassword && body.adminNama) {
+      const hashedPw = await bcrypt.hash(body.adminPassword, 10);
+      await sql`
+        INSERT INTO users (id, "schoolId", nama, email, password, role, "isActive", "createdAt", "updatedAt")
+        VALUES (gen_random_uuid(), ${school[0].id}, ${body.adminNama}, ${body.adminEmail}, ${hashedPw}, 'ADMIN', true, NOW(), NOW())
+      `;
+    }
+
+    return c.json({ success: true, data: school[0] }, 201);
+  } catch (error: any) {
+    console.error('Error creating school:', error);
+    if (error.code === '23505') {
+      return c.json({ success: false, error: 'Email atau NPSN sudah terdaftar' }, 400);
+    }
+    return c.json({ success: false, error: 'Failed to create school' }, 500);
+  }
+});
+
+// GET /superadmin/schools/:id - School detail with stats
+superadmin.get('/schools/:id', requireSuperAdmin, async (c) => {
+  try {
+    const id = c.req.param('id');
+
+    const school = await sql`
+      SELECT s.*, t.label as tier_label, t.nama as tier_nama,
+             (SELECT COUNT(*) FROM guru g WHERE g."schoolId" = s.id) as guru_count,
+             (SELECT COUNT(*) FROM siswa si WHERE si."schoolId" = s.id) as siswa_count,
+             (SELECT COUNT(*) FROM ujian u WHERE u."schoolId" = s.id) as ujian_count,
+             (SELECT COUNT(*) FROM users u WHERE u."schoolId" = s.id) as user_count,
+             (SELECT COUNT(*) FROM kelas k WHERE k."schoolId" = s.id) as kelas_count,
+             (SELECT COUNT(*) FROM mata_pelajaran m WHERE m."schoolId" = s.id) as mapel_count
+      FROM schools s
+      LEFT JOIN tiers t ON t.id = s."tierId"
+      WHERE s.id = ${id}
+      LIMIT 1
+    `;
+
+    if (!school[0]) return c.json({ success: false, error: 'School not found' }, 404);
+
+    // Get admin users for this school
+    const admins = await sql`
+      SELECT id, nama, email, role, "isActive", "createdAt"
+      FROM users WHERE "schoolId" = ${id} AND role = 'ADMIN'
+      ORDER BY "createdAt" ASC
+    `;
+
+    return c.json({
+      success: true,
+      data: {
+        ...school[0],
+        tierLabel: school[0].tier_label,
+        tierNama: school[0].tier_nama,
+        _count: {
+          guru: parseInt(school[0].guru_count),
+          siswa: parseInt(school[0].siswa_count),
+          ujian: parseInt(school[0].ujian_count),
+          users: parseInt(school[0].user_count),
+          kelas: parseInt(school[0].kelas_count),
+          mapel: parseInt(school[0].mapel_count),
+        },
+        admins,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching school detail:', error);
+    return c.json({ success: false, error: 'Failed to fetch school' }, 500);
   }
 });
 
@@ -420,6 +508,158 @@ superadmin.post('/create', async (c) => {
   } catch (error) {
     console.error('Error creating super admin:', error);
     return c.json({ success: false, error: 'Failed to create super admin' }, 500);
+  }
+});
+
+// ============================================
+// PLATFORM NOTIFICATIONS
+// ============================================
+
+// GET /superadmin/notifications - List all platform notifications
+superadmin.get('/notifications', requireSuperAdmin, async (c) => {
+  try {
+    const notifications = await sql`
+      SELECT pn.*,
+        (SELECT COUNT(*) FROM notification_reads nr WHERE nr."notificationId" = pn.id) as "readCount"
+      FROM platform_notifications pn
+      ORDER BY pn."createdAt" DESC
+      LIMIT 50
+    `;
+    return c.json({ success: true, data: notifications });
+  } catch (error: any) {
+    if (error?.code === '42P01') {
+      return c.json({ success: true, data: [] });
+    }
+    console.error('Error fetching notifications:', error);
+    return c.json({ success: false, error: 'Failed to fetch notifications' }, 500);
+  }
+});
+
+// POST /superadmin/notifications - Create platform notification
+const createNotifSchema = z.object({
+  judul: z.string().min(1),
+  pesan: z.string().min(1),
+  tipe: z.enum(['info', 'warning', 'update', 'maintenance', 'promo']),
+  targetRole: z.array(z.string()).default(['ALL']),
+  targetSchoolIds: z.array(z.string()).default([]),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+  isPublished: z.boolean().default(false),
+  expiresAt: z.string().nullable().optional(),
+});
+
+superadmin.post('/notifications', requireSuperAdmin, zValidator('json', createNotifSchema), async (c) => {
+  try {
+    const data = c.req.valid('json');
+    const sa = c.get('superadmin') as any;
+
+    const result = await sql`
+      INSERT INTO platform_notifications (judul, pesan, tipe, "targetRole", "targetSchoolIds", priority, "isPublished", "publishedAt", "expiresAt", "createdBy", "createdAt", "updatedAt")
+      VALUES (
+        ${data.judul}, ${data.pesan}, ${data.tipe},
+        ${data.targetRole}, ${data.targetSchoolIds},
+        ${data.priority}, ${data.isPublished},
+        ${data.isPublished ? new Date().toISOString() : null},
+        ${data.expiresAt || null},
+        ${sa.id}, NOW(), NOW()
+      )
+      RETURNING *
+    `;
+
+    return c.json({ success: true, data: result[0] }, 201);
+  } catch (error) {
+    console.error('Error creating notification:', error);
+    return c.json({ success: false, error: 'Failed to create notification' }, 500);
+  }
+});
+
+// PUT /superadmin/notifications/:id - Update notification
+superadmin.put('/notifications/:id', requireSuperAdmin, async (c) => {
+  try {
+    const id = c.req.param('id');
+    const data = await c.req.json();
+
+    const wasPublished = await sql`SELECT "isPublished" FROM platform_notifications WHERE id = ${id}`;
+    const nowPublishing = data.isPublished && !wasPublished[0]?.isPublished;
+
+    const result = await sql`
+      UPDATE platform_notifications SET
+        judul = COALESCE(${data.judul ?? null}, judul),
+        pesan = COALESCE(${data.pesan ?? null}, pesan),
+        tipe = COALESCE(${data.tipe ?? null}, tipe),
+        "targetRole" = COALESCE(${data.targetRole ?? null}, "targetRole"),
+        "targetSchoolIds" = COALESCE(${data.targetSchoolIds ?? null}, "targetSchoolIds"),
+        priority = COALESCE(${data.priority ?? null}, priority),
+        "isPublished" = COALESCE(${data.isPublished ?? null}, "isPublished"),
+        "publishedAt" = CASE WHEN ${nowPublishing} THEN NOW() ELSE "publishedAt" END,
+        "expiresAt" = ${data.expiresAt ?? null},
+        "updatedAt" = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `;
+
+    if (!result[0]) {
+      return c.json({ success: false, error: 'Notification not found' }, 404);
+    }
+
+    return c.json({ success: true, data: result[0] });
+  } catch (error) {
+    console.error('Error updating notification:', error);
+    return c.json({ success: false, error: 'Failed to update notification' }, 500);
+  }
+});
+
+// DELETE /superadmin/notifications/:id
+superadmin.delete('/notifications/:id', requireSuperAdmin, async (c) => {
+  try {
+    const id = c.req.param('id');
+    await sql`DELETE FROM platform_notifications WHERE id = ${id}`;
+    return c.json({ success: true, message: 'Notification deleted' });
+  } catch (error) {
+    console.error('Error deleting notification:', error);
+    return c.json({ success: false, error: 'Failed to delete notification' }, 500);
+  }
+});
+
+// ============================================
+// SMTP / RESEND CONFIG (stored in smtp_config table)
+// ============================================
+
+// GET /superadmin/smtp - Get SMTP/Resend config
+superadmin.get('/smtp', requireSuperAdmin, async (c) => {
+  try {
+    const config = await sql`SELECT id, host, port, secure, "user", "fromName", "fromEmail", "isActive", "createdAt" FROM smtp_config ORDER BY "createdAt" DESC LIMIT 1`;
+    return c.json({ success: true, data: config[0] || null });
+  } catch (error: any) {
+    if (error?.code === '42P01') {
+      return c.json({ success: true, data: null });
+    }
+    console.error('Error fetching SMTP config:', error);
+    return c.json({ success: false, error: 'Failed to fetch config' }, 500);
+  }
+});
+
+// POST /superadmin/smtp - Save SMTP/Resend config
+superadmin.post('/smtp', requireSuperAdmin, async (c) => {
+  try {
+    const data = await c.req.json();
+
+    // Upsert: delete old, insert new
+    await sql`DELETE FROM smtp_config`;
+    const result = await sql`
+      INSERT INTO smtp_config (host, port, secure, "user", pass, "fromName", "fromEmail", "isActive", "createdAt", "updatedAt")
+      VALUES (
+        ${data.host || 'api.resend.com'}, ${data.port || 443}, ${data.secure ?? true},
+        ${data.user || 'resend'}, ${data.pass || ''},
+        ${data.fromName || 'E-Learning Platform'}, ${data.fromEmail || 'noreply@nilai.online'},
+        true, NOW(), NOW()
+      )
+      RETURNING id, host, port, secure, "user", "fromName", "fromEmail", "isActive"
+    `;
+
+    return c.json({ success: true, data: result[0] });
+  } catch (error) {
+    console.error('Error saving SMTP config:', error);
+    return c.json({ success: false, error: 'Failed to save config' }, 500);
   }
 });
 

@@ -2,33 +2,48 @@ import { Lucia } from "lucia";
 import { NeonHTTPAdapter } from "@lucia-auth/adapter-postgresql";
 import { neon } from "@neondatabase/serverless";
 
-const DATABASE_URL = process.env.DATABASE_URL;
+let _lucia: Lucia | null = null;
+let _lastDbUrl: string | null = null;
 
-if (!DATABASE_URL) {
-  throw new Error("DATABASE_URL environment variable is not set");
+/**
+ * Get or create Lucia instance (lazy init for edge runtime).
+ * @param databaseUrl - DATABASE_URL from env bindings
+ * @param isProduction - whether to set secure cookie
+ */
+export function getLucia(databaseUrl: string, isProduction = false): Lucia {
+  if (_lucia && databaseUrl === _lastDbUrl) return _lucia;
+
+  const sql = neon(databaseUrl);
+  const adapter = new NeonHTTPAdapter(sql, {
+    user: "users",
+    session: "user_sessions",
+  });
+
+  _lucia = new Lucia(adapter, {
+    sessionCookie: {
+      attributes: {
+        secure: isProduction,
+      },
+    },
+    getUserAttributes: (attributes) => {
+      return {
+        email: attributes.email,
+        role: attributes.role,
+        schoolId: attributes.schoolId,
+        isActive: attributes.isActive,
+      };
+    },
+  });
+
+  _lastDbUrl = databaseUrl;
+  return _lucia;
 }
 
-const sql = neon(DATABASE_URL);
-
-// Create adapter for Lucia with Neon
-const adapter = new NeonHTTPAdapter(sql, {
-  user: "users",
-  session: "user_sessions",
-});
-
-export const lucia = new Lucia(adapter, {
-  sessionCookie: {
-    attributes: {
-      secure: process.env.NODE_ENV === "production",
-    },
-  },
-  getUserAttributes: (attributes) => {
-    return {
-      email: attributes.email,
-      role: attributes.role,
-      schoolId: attributes.schoolId,
-      isActive: attributes.isActive,
-    };
+// Backward-compatible proxy — works after getLucia() is called at least once
+export const lucia: Lucia = new Proxy({} as Lucia, {
+  get(_target, prop) {
+    if (!_lucia) throw new Error("Lucia not initialized. Call getLucia(DATABASE_URL) first.");
+    return (_lucia as any)[prop];
   },
 });
 

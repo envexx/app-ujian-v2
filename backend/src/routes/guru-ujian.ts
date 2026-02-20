@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { sql } from '../lib/db';
 import { authMiddleware, requireRole, tenantMiddleware } from '../middleware/auth';
 
-const guruUjian = new Hono();
+const guruUjian = new Hono<HonoEnv>();
 
 guruUjian.use('*', authMiddleware, tenantMiddleware);
 
@@ -48,14 +49,29 @@ guruUjian.get('/', requireRole('GURU'), async (c) => {
       `;
     }
 
-    const kelasList = await sql`
+    let kelasList = await sql`
       SELECT k.id, k.nama FROM guru_kelas gk JOIN kelas k ON k.id = gk."kelasId"
       WHERE gk."guruId" = ${guru.id} ORDER BY k.nama ASC
     `;
-    const mapelList = await sql`
+    
+    // Fallback: if no kelas assigned, get all kelas from school
+    if (kelasList.length === 0) {
+      kelasList = await sql`
+        SELECT id, nama FROM kelas WHERE "schoolId" = ${guru.schoolId} ORDER BY nama ASC
+      `;
+    }
+    
+    let mapelList = await sql`
       SELECT m.id, m.nama FROM guru_mapel gm JOIN mata_pelajaran m ON m.id = gm."mapelId"
       WHERE gm."guruId" = ${guru.id}
     `;
+    
+    // Fallback: if no mapel assigned, get all mapel from school
+    if (mapelList.length === 0) {
+      mapelList = await sql`
+        SELECT id, nama FROM mata_pelajaran WHERE "schoolId" = ${guru.schoolId} ORDER BY nama ASC
+      `;
+    }
 
     return c.json({
       success: true,
@@ -101,12 +117,11 @@ guruUjian.post('/', requireRole('GURU'), zValidator('json', createUjianSchema), 
       return c.json({ success: false, error: 'Batas maksimal ujian tercapai' }, 403);
     }
 
-    const startDate = new Date(body.startUjian);
-    const endDate = new Date(body.endUjian);
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      return c.json({ success: false, error: 'Format waktu tidak valid' }, 400);
+    // Validate dates (frontend sends Jakarta local time strings)
+    if (!body.startUjian || !body.endUjian) {
+      return c.json({ success: false, error: 'Waktu mulai dan akhir harus diisi' }, 400);
     }
-    if (endDate <= startDate) {
+    if (new Date(body.endUjian) <= new Date(body.startUjian)) {
       return c.json({ success: false, error: 'Waktu akhir harus lebih besar dari waktu mulai' }, 400);
     }
 
@@ -117,7 +132,7 @@ guruUjian.post('/', requireRole('GURU'), zValidator('json', createUjianSchema), 
       INSERT INTO ujian (id, "schoolId", judul, deskripsi, "mapelId", "guruId", kelas, "startUjian", "endUjian",
         "shuffleQuestions", "showScore", status, "createdAt", "updatedAt")
       VALUES (gen_random_uuid(), ${guru.schoolId}, ${body.judul}, ${body.deskripsi || null}, ${body.mapelId}, ${guru.id},
-        ${kelasPostgres}::text[], ${startDate.toISOString()}, ${endDate.toISOString()},
+        ${kelasPostgres}::text[], ${body.startUjian}, ${body.endUjian},
         ${body.shuffleQuestions}, ${body.showScore}, 'draft', NOW(), NOW())
       RETURNING *
     `;
@@ -146,6 +161,31 @@ guruUjian.get('/:id', requireRole('GURU'), async (c) => {
     const soalList = await sql`SELECT * FROM soal WHERE "ujianId" = ${ujianId} ORDER BY urutan ASC`;
     const submissionCount = await sql`SELECT COUNT(*) as count FROM ujian_submission WHERE "ujianId" = ${ujianId}`;
 
+    // Fetch kelas and mapel lists for the guru
+    let kelasList = await sql`
+      SELECT k.id, k.nama FROM guru_kelas gk JOIN kelas k ON k.id = gk."kelasId"
+      WHERE gk."guruId" = ${guru.id} ORDER BY k.nama ASC
+    `;
+    
+    // Fallback: if no kelas assigned, get all kelas from school
+    if (kelasList.length === 0) {
+      kelasList = await sql`
+        SELECT id, nama FROM kelas WHERE "schoolId" = ${guru.schoolId} ORDER BY nama ASC
+      `;
+    }
+    
+    let mapelList = await sql`
+      SELECT m.id, m.nama FROM guru_mapel gm JOIN mata_pelajaran m ON m.id = gm."mapelId"
+      WHERE gm."guruId" = ${guru.id}
+    `;
+    
+    // Fallback: if no mapel assigned, get all mapel from school
+    if (mapelList.length === 0) {
+      mapelList = await sql`
+        SELECT id, nama FROM mata_pelajaran WHERE "schoolId" = ${guru.schoolId} ORDER BY nama ASC
+      `;
+    }
+
     return c.json({
       success: true,
       data: {
@@ -155,6 +195,8 @@ guruUjian.get('/:id', requireRole('GURU'), async (c) => {
           _count: { submissions: parseInt(submissionCount[0]?.count || '0') },
         },
         soal: soalList,
+        kelasList: kelasList.map((k: any) => ({ id: k.id, nama: k.nama })),
+        mapelList: mapelList.map((m: any) => ({ id: m.id, nama: m.nama })),
       },
     });
   } catch (error) {
@@ -184,8 +226,8 @@ guruUjian.put('/:id', requireRole('GURU'), async (c) => {
         deskripsi = COALESCE(${body.deskripsi !== undefined ? body.deskripsi : null}, deskripsi),
         "mapelId" = COALESCE(${body.mapelId || null}, "mapelId"),
         kelas = COALESCE(${kelasPostgres}::text[], kelas),
-        "startUjian" = COALESCE(${body.startUjian ? new Date(body.startUjian).toISOString() : null}, "startUjian"),
-        "endUjian" = COALESCE(${body.endUjian ? new Date(body.endUjian).toISOString() : null}, "endUjian"),
+        "startUjian" = COALESCE(${body.startUjian || null}, "startUjian"),
+        "endUjian" = COALESCE(${body.endUjian || null}, "endUjian"),
         "shuffleQuestions" = COALESCE(${body.shuffleQuestions !== undefined ? body.shuffleQuestions : null}, "shuffleQuestions"),
         "showScore" = COALESCE(${body.showScore !== undefined ? body.showScore : null}, "showScore"),
         status = COALESCE(${body.status || null}, status),
@@ -381,6 +423,20 @@ guruUjian.get('/:id/nilai', requireRole('GURU'), async (c) => {
       ORDER BY s.nama ASC
     `;
 
+    // Helper: extract actual value from JSONB wrapper ({value:x}, {jawaban:x})
+    function extractValue(raw: any): any {
+      if (raw === null || raw === undefined) return raw;
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { return raw; }
+      }
+      if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+        const keys = Object.keys(raw);
+        if (keys.length === 1 && keys[0] === 'value') return raw.value;
+        if (keys.length === 1 && keys[0] === 'jawaban') return raw.jawaban;
+      }
+      return raw;
+    }
+
     // Get jawaban for each submission
     const submissionsWithJawaban = await Promise.all(submissions.map(async (sub: any) => {
       const jawaban = await sql`
@@ -430,7 +486,7 @@ guruUjian.get('/:id/nilai', requireRole('GURU'), async (c) => {
         jawaban: jawaban.map((j: any) => ({
           id: j.id,
           soalId: j.soalId,
-          jawaban: j.jawaban,
+          jawaban: extractValue(j.jawaban),
           nilai: j.nilai,
           isCorrect: j.isCorrect,
           feedback: j.feedback,
@@ -477,7 +533,8 @@ guruUjian.put('/:id/nilai', requireRole('GURU'), async (c) => {
     if (!ujian[0]) return c.json({ success: false, error: 'Ujian not found' }, 404);
 
     for (const grade of grades) {
-      await sql`UPDATE ujian_jawaban SET nilai = ${grade.nilai}, feedback = ${grade.feedback || null} WHERE id = ${grade.jawabanId}`;
+      const isCorrect = grade.nilai > 0 ? true : false;
+      await sql`UPDATE ujian_jawaban SET nilai = ${grade.nilai}, "isCorrect" = ${isCorrect}, feedback = ${grade.feedback || null} WHERE id = ${grade.jawabanId}`;
     }
 
     // Recalculate
@@ -522,6 +579,108 @@ guruUjian.post('/:id/nilai/recalculate', requireRole('GURU'), async (c) => {
   } catch (error) {
     console.error('Error recalculating nilai:', error);
     return c.json({ success: false, error: 'Failed to recalculate nilai' }, 500);
+  }
+});
+
+// GET /guru/ujian/:id/hasil - Get all students with their submission status for an exam
+guruUjian.get('/:id/hasil', requireRole('GURU'), async (c) => {
+  try {
+    const user = c.get('user');
+    const ujianId = c.req.param('id');
+    const kelasFilter = c.req.query('kelas');
+    const guru = await getGuru(user.userId);
+    if (!guru) return c.json({ success: false, error: 'Guru not found' }, 404);
+
+    // Get ujian details
+    const ujianResult = await sql`
+      SELECT u.*, m.nama as mapel_nama 
+      FROM ujian u
+      LEFT JOIN mata_pelajaran m ON m.id = u."mapelId"
+      WHERE u.id = ${ujianId} AND u."guruId" = ${guru.id} LIMIT 1
+    `;
+    if (!ujianResult[0]) return c.json({ success: false, error: 'Ujian not found' }, 404);
+
+    const ujian = ujianResult[0];
+    const kelasArr = Array.isArray(ujian.kelas) ? ujian.kelas : [ujian.kelas];
+
+    // Get all students in the exam's classes
+    let siswaQuery;
+    if (kelasFilter) {
+      siswaQuery = await sql`
+        SELECT s.id, s.nisn, s.nama, k.nama as kelas_nama, k.id as kelas_id
+        FROM siswa s
+        JOIN kelas k ON k.id = s."kelasId"
+        WHERE s."schoolId" = ${guru.schoolId} AND k.nama = ${kelasFilter}
+        ORDER BY k.nama ASC, s.nama ASC
+      `;
+    } else {
+      siswaQuery = await sql`
+        SELECT s.id, s.nisn, s.nama, k.nama as kelas_nama, k.id as kelas_id
+        FROM siswa s
+        JOIN kelas k ON k.id = s."kelasId"
+        WHERE s."schoolId" = ${guru.schoolId} AND k.nama = ANY(${kelasArr}::text[])
+        ORDER BY k.nama ASC, s.nama ASC
+      `;
+    }
+
+    // Get all submissions for this ujian
+    const submissions = await sql`
+      SELECT us.id, us."siswaId", us.nilai, us.status, us."startedAt", us."submittedAt"
+      FROM ujian_submission us
+      WHERE us."ujianId" = ${ujianId}
+    `;
+
+    // Map submissions by siswaId
+    const submissionMap = new Map();
+    for (const sub of submissions) {
+      submissionMap.set(sub.siswaId, sub);
+    }
+
+    // Build result with all students
+    const result = siswaQuery.map((s: any) => {
+      const submission = submissionMap.get(s.id);
+      return {
+        id: submission?.id || null,
+        siswa: {
+          id: s.id,
+          nisn: s.nisn,
+          nama: s.nama,
+          kelas: { id: s.kelas_id, nama: s.kelas_nama },
+        },
+        nilai: submission?.nilai ?? null,
+        status: submission?.status || 'belum_mulai',
+        startedAt: submission?.startedAt || null,
+        submittedAt: submission?.submittedAt || null,
+      };
+    });
+
+    // Get unique kelas for filter
+    const uniqueKelas = [...new Set(kelasArr)];
+
+    return c.json({
+      success: true,
+      data: {
+        ujian: {
+          id: ujian.id,
+          judul: ujian.judul,
+          mapel: ujian.mapel_nama,
+          kelas: kelasArr,
+          startUjian: ujian.startUjian,
+          endUjian: ujian.endUjian,
+        },
+        siswa: result,
+        kelasList: uniqueKelas,
+        stats: {
+          total: result.length,
+          selesai: result.filter((r: any) => r.status === 'selesai').length,
+          sedangMengerjakan: result.filter((r: any) => r.status === 'sedang_mengerjakan').length,
+          belumMulai: result.filter((r: any) => r.status === 'belum_mulai').length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching hasil:', error);
+    return c.json({ success: false, error: 'Failed to fetch hasil' }, 500);
   }
 });
 

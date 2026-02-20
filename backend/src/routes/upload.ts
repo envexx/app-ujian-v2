@@ -1,11 +1,20 @@
 import { Hono } from 'hono';
 import { authMiddleware, tenantMiddleware } from '../middleware/auth';
-import { uploadBase64ToR2, uploadFileToR2, deleteFromR2, extractKeyFromUrl, R2_PUBLIC_URL } from '../lib/r2';
+import { uploadBase64ToR2, uploadFileToR2, deleteFromR2, extractKeyFromUrl } from '../lib/r2';
+import type { HonoEnv } from '../env';
 
-const upload = new Hono();
+const upload = new Hono<HonoEnv>();
 
 // Apply auth middleware
 upload.use('*', authMiddleware, tenantMiddleware);
+
+// Helper to get R2 bucket and public URL from env
+function getR2(c: any) {
+  const bucket = c.env?.R2_BUCKET as R2Bucket;
+  const publicUrl = c.env?.R2_PUBLIC_URL || 'https://storage.nilai.online';
+  if (!bucket) throw new Error('R2_BUCKET binding not configured');
+  return { bucket, publicUrl };
+}
 
 // POST /upload/r2 - Upload base64 image to R2
 upload.post('/r2', async (c) => {
@@ -17,27 +26,19 @@ upload.post('/r2', async (c) => {
       return c.json({ success: false, error: 'Image data required' }, 400);
     }
 
-    // Get user info for folder organization
+    const { bucket, publicUrl } = getR2(c);
     const user = c.get('user');
     const schoolId = user?.schoolId || 'default';
-    
-    // Organize by school and folder type
     const folderPath = `${schoolId}/${folder || 'uploads'}`;
     const name = fileName || 'image';
 
-    const result = await uploadBase64ToR2(imageBase64, folderPath, name);
+    const result = await uploadBase64ToR2(bucket, imageBase64, folderPath, name, publicUrl);
 
     if (!result.success) {
       return c.json({ success: false, error: result.error || 'Upload failed' }, 500);
     }
 
-    return c.json({
-      success: true,
-      data: {
-        url: result.url,
-        key: result.key,
-      },
-    });
+    return c.json({ success: true, data: { url: result.url, key: result.key } });
   } catch (error) {
     console.error('Error uploading to R2:', error);
     return c.json({ success: false, error: 'Failed to upload' }, 500);
@@ -54,25 +55,19 @@ upload.post('/soal', async (c) => {
       return c.json({ success: false, error: 'Image data required' }, 400);
     }
 
+    const { bucket, publicUrl } = getR2(c);
     const user = c.get('user');
     const schoolId = user?.schoolId || 'default';
-    
     const folderPath = `${schoolId}/soal/${ujianId || 'draft'}`;
     const fileName = `soal_${soalIndex || Date.now()}`;
 
-    const result = await uploadBase64ToR2(imageBase64, folderPath, fileName);
+    const result = await uploadBase64ToR2(bucket, imageBase64, folderPath, fileName, publicUrl);
 
     if (!result.success) {
       return c.json({ success: false, error: result.error || 'Upload failed' }, 500);
     }
 
-    return c.json({
-      success: true,
-      data: {
-        url: result.url,
-        key: result.key,
-      },
-    });
+    return c.json({ success: true, data: { url: result.url, key: result.key } });
   } catch (error) {
     console.error('Error uploading soal image:', error);
     return c.json({ success: false, error: 'Failed to upload' }, 500);
@@ -89,26 +84,20 @@ upload.post('/jawaban', async (c) => {
       return c.json({ success: false, error: 'Image data required' }, 400);
     }
 
+    const { bucket, publicUrl } = getR2(c);
     const user = c.get('user');
     const schoolId = user?.schoolId || 'default';
     const userId = user?.userId || 'anonymous';
-    
     const folderPath = `${schoolId}/jawaban/${ujianId || 'draft'}/${userId}`;
     const fileName = `jawaban_${soalId || Date.now()}`;
 
-    const result = await uploadBase64ToR2(imageBase64, folderPath, fileName);
+    const result = await uploadBase64ToR2(bucket, imageBase64, folderPath, fileName, publicUrl);
 
     if (!result.success) {
       return c.json({ success: false, error: result.error || 'Upload failed' }, 500);
     }
 
-    return c.json({
-      success: true,
-      data: {
-        url: result.url,
-        key: result.key,
-      },
-    });
+    return c.json({ success: true, data: { url: result.url, key: result.key } });
   } catch (error) {
     console.error('Error uploading jawaban image:', error);
     return c.json({ success: false, error: 'Failed to upload' }, 500);
@@ -125,26 +114,20 @@ upload.post('/profile', async (c) => {
       return c.json({ success: false, error: 'Image data required' }, 400);
     }
 
+    const { bucket, publicUrl } = getR2(c);
     const user = c.get('user');
     const schoolId = user?.schoolId || 'default';
     const userId = user?.userId || 'anonymous';
-    
     const folderPath = `${schoolId}/profiles`;
     const fileName = `profile_${userId}`;
 
-    const result = await uploadBase64ToR2(imageBase64, folderPath, fileName);
+    const result = await uploadBase64ToR2(bucket, imageBase64, folderPath, fileName, publicUrl);
 
     if (!result.success) {
       return c.json({ success: false, error: result.error || 'Upload failed' }, 500);
     }
 
-    return c.json({
-      success: true,
-      data: {
-        url: result.url,
-        key: result.key,
-      },
-    });
+    return c.json({ success: true, data: { url: result.url, key: result.key } });
   } catch (error) {
     console.error('Error uploading profile image:', error);
     return c.json({ success: false, error: 'Failed to upload' }, 500);
@@ -162,24 +145,18 @@ upload.post('/file', async (c) => {
       return c.json({ success: false, error: 'File required' }, 400);
     }
 
+    const { bucket, publicUrl } = getR2(c);
     const user = c.get('user');
     const schoolId = user?.schoolId || 'default';
-    
     const folderPath = `${schoolId}/${folder}`;
 
-    const result = await uploadFileToR2(file, folderPath);
+    const result = await uploadFileToR2(bucket, file, folderPath, publicUrl);
 
     if (!result.success) {
       return c.json({ success: false, error: result.error || 'Upload failed' }, 500);
     }
 
-    return c.json({
-      success: true,
-      data: {
-        url: result.url,
-        key: result.key,
-      },
-    });
+    return c.json({ success: true, data: { url: result.url, key: result.key } });
   } catch (error) {
     console.error('Error uploading file:', error);
     return c.json({ success: false, error: 'Failed to upload' }, 500);
@@ -191,10 +168,11 @@ upload.delete('/', async (c) => {
   try {
     const body = await c.req.json();
     const { url, key } = body;
+    const { bucket, publicUrl } = getR2(c);
 
     let deleteKey = key;
     if (!deleteKey && url) {
-      deleteKey = extractKeyFromUrl(url);
+      deleteKey = extractKeyFromUrl(publicUrl, url);
     }
 
     if (!deleteKey) {
@@ -209,7 +187,7 @@ upload.delete('/', async (c) => {
       return c.json({ success: false, error: 'Permission denied' }, 403);
     }
 
-    const success = await deleteFromR2(deleteKey);
+    const success = await deleteFromR2(bucket, deleteKey);
 
     if (!success) {
       return c.json({ success: false, error: 'Delete failed' }, 500);
@@ -232,25 +210,19 @@ upload.post('/', async (c) => {
       return c.json({ success: false, error: 'Image data required' }, 400);
     }
 
+    const { bucket, publicUrl } = getR2(c);
     const user = c.get('user');
     const schoolId = user?.schoolId || 'default';
-    
     const folderPath = `${schoolId}/${folder || 'uploads'}`;
     const name = fileName || 'file';
 
-    const result = await uploadBase64ToR2(imageBase64, folderPath, name);
+    const result = await uploadBase64ToR2(bucket, imageBase64, folderPath, name, publicUrl);
 
     if (!result.success) {
       return c.json({ success: false, error: result.error || 'Upload failed' }, 500);
     }
 
-    return c.json({
-      success: true,
-      data: {
-        url: result.url,
-        key: result.key,
-      },
-    });
+    return c.json({ success: true, data: { url: result.url, key: result.key } });
   } catch (error) {
     console.error('Error uploading:', error);
     return c.json({ success: false, error: 'Failed to upload' }, 500);

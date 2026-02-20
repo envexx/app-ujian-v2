@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { sql } from '../lib/db';
 import { authMiddleware, requireRole, tenantMiddleware } from '../middleware/auth';
 
-const dashboard = new Hono();
+const dashboard = new Hono<HonoEnv>();
 
 // Apply auth middleware to all routes
 dashboard.use('*', authMiddleware, tenantMiddleware);

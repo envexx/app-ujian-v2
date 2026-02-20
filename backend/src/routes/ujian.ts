@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { sql } from '../lib/db';
 import { authMiddleware, requireRole, tenantMiddleware } from '../middleware/auth';
 
-const ujian = new Hono();
+const ujian = new Hono<HonoEnv>();
 
 // Apply auth middleware to all routes
 ujian.use('*', authMiddleware, tenantMiddleware);
@@ -129,15 +130,12 @@ ujian.post('/', requireRole('GURU'), zValidator('json', createUjianSchema), asyn
     const user = c.get('user');
     const body = c.req.valid('json');
 
-    // Validate dates
-    const startDate = new Date(body.startUjian);
-    const endDate = new Date(body.endUjian);
-
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      return c.json({ success: false, error: 'Format waktu tidak valid' }, 400);
+    // Validate dates (frontend sends Jakarta local time strings)
+    if (!body.startUjian || !body.endUjian) {
+      return c.json({ success: false, error: 'Waktu mulai dan akhir harus diisi' }, 400);
     }
 
-    if (endDate <= startDate) {
+    if (new Date(body.endUjian) <= new Date(body.startUjian)) {
       return c.json({ success: false, error: 'Waktu akhir harus lebih besar dari waktu mulai' }, 400);
     }
 
@@ -160,10 +158,10 @@ ujian.post('/', requireRole('GURU'), zValidator('json', createUjianSchema), asyn
 
     const kelasArray = Array.isArray(body.kelas) ? body.kelas : [body.kelas];
 
-    // Create ujian as draft
+    // Create ujian as draft — store datetime strings directly (Jakarta local time)
     const result = await sql`
       INSERT INTO ujian ("schoolId", judul, deskripsi, "mapelId", "guruId", kelas, "startUjian", "endUjian", "shuffleQuestions", "showScore", status, "createdAt", "updatedAt")
-      VALUES (${guru.schoolId}, ${body.judul}, ${body.deskripsi || null}, ${body.mapelId}, ${guru.id}, ${kelasArray}, ${startDate.toISOString()}, ${endDate.toISOString()}, ${body.shuffleQuestions}, ${body.showScore}, 'draft', NOW(), NOW())
+      VALUES (${guru.schoolId}, ${body.judul}, ${body.deskripsi || null}, ${body.mapelId}, ${guru.id}, ${kelasArray}, ${body.startUjian}, ${body.endUjian}, ${body.shuffleQuestions}, ${body.showScore}, 'draft', NOW(), NOW())
       RETURNING *
     `;
 

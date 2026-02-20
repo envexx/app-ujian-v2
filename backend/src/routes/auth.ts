@@ -5,8 +5,10 @@ import bcrypt from 'bcryptjs';
 import { sql } from '../lib/db';
 import { lucia } from '../lib/lucia';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import type { HonoEnv } from '../env';
+import { sendPasswordResetEmail } from '../lib/email';
 
-const auth = new Hono();
+const auth = new Hono<HonoEnv>();
 
 // Login schema
 const loginSchema = z.object({
@@ -79,7 +81,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
       path: sessionCookie.attributes.path,
       maxAge: sessionCookie.attributes.maxAge,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: c.env?.NODE_ENV === 'production',
       sameSite: 'lax',
     });
 
@@ -209,7 +211,7 @@ auth.post('/siswa-login', zValidator('json', siswaLoginSchema), async (c) => {
       path: sessionCookie.attributes.path,
       maxAge: sessionCookie.attributes.maxAge,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: c.env?.NODE_ENV === 'production',
       sameSite: 'lax',
     });
 
@@ -321,7 +323,7 @@ auth.get('/session', async (c) => {
         path: sessionCookie.attributes.path,
         maxAge: sessionCookie.attributes.maxAge,
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: c.env?.NODE_ENV === 'production',
         sameSite: 'lax',
       });
     }
@@ -339,6 +341,98 @@ auth.get('/session', async (c) => {
   } catch (error) {
     console.error('Session error:', error);
     return c.json({ success: false, isLoggedIn: false, data: null });
+  }
+});
+
+// ============================================
+// FORGOT / RESET PASSWORD
+// ============================================
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email('Email tidak valid'),
+});
+
+// POST /auth/forgot-password - Request password reset
+auth.post('/forgot-password', zValidator('json', forgotPasswordSchema), async (c) => {
+  try {
+    const { email } = c.req.valid('json');
+
+    // Check if user exists
+    const users = await sql`SELECT id, email, role FROM users WHERE email = ${email} AND "isActive" = true LIMIT 1`;
+    const user = users[0];
+
+    // Always return success to prevent email enumeration
+    if (!user) {
+      return c.json({ success: true, message: 'Jika email terdaftar, link reset password telah dikirim.' });
+    }
+
+    // Only admin and guru can reset password (siswa uses NISN login)
+    if (user.role === 'SISWA') {
+      return c.json({ success: true, message: 'Jika email terdaftar, link reset password telah dikirim.' });
+    }
+
+    // Generate token
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+
+    // Save token
+    await sql`
+      INSERT INTO password_reset_tokens (email, token, "expiresAt", "createdAt")
+      VALUES (${email}, ${token}, ${expiresAt}, NOW())
+    `;
+
+    // Send email via Resend
+    const resendApiKey = c.env?.RESEND_API_KEY || '';
+    const frontendUrl = c.env?.FRONTEND_URL || 'http://localhost:3000';
+
+    if (resendApiKey) {
+      await sendPasswordResetEmail(resendApiKey, email, token, frontendUrl);
+    } else {
+      console.warn('RESEND_API_KEY not set, skipping email send. Token:', token);
+    }
+
+    return c.json({ success: true, message: 'Jika email terdaftar, link reset password telah dikirim.' });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    return c.json({ success: false, error: 'Terjadi kesalahan' }, 500);
+  }
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(6, 'Password minimal 6 karakter'),
+});
+
+// POST /auth/reset-password - Reset password with token
+auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) => {
+  try {
+    const { token, password } = c.req.valid('json');
+
+    // Find valid token
+    const tokens = await sql`
+      SELECT * FROM password_reset_tokens
+      WHERE token = ${token} AND used = false AND "expiresAt" > NOW()
+      LIMIT 1
+    `;
+    const resetToken = tokens[0];
+
+    if (!resetToken) {
+      return c.json({ success: false, error: 'Token tidak valid atau sudah expired' }, 400);
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update user password
+    await sql`UPDATE users SET password = ${hashedPassword} WHERE email = ${resetToken.email}`;
+
+    // Mark token as used
+    await sql`UPDATE password_reset_tokens SET used = true WHERE id = ${resetToken.id}`;
+
+    return c.json({ success: true, message: 'Password berhasil direset. Silakan login dengan password baru.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return c.json({ success: false, error: 'Terjadi kesalahan' }, 500);
   }
 });
 

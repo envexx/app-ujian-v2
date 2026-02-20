@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { sql } from '../lib/db';
 import { authMiddleware, requireRole, tenantMiddleware } from '../middleware/auth';
 
-const guru = new Hono();
+const guru = new Hono<HonoEnv>();
 
 // Apply auth middleware to all routes
 guru.use('*', authMiddleware, tenantMiddleware);
@@ -137,16 +138,16 @@ guru.post('/', requireRole('ADMIN'), zValidator('json', createGuruSchema), async
 
     // Create User account first
     const newUserResult = await sql`
-      INSERT INTO users ("schoolId", email, password, role, "isActive", "createdAt", "updatedAt")
-      VALUES (${schoolId}, ${body.email}, ${hashedPassword}, 'GURU', ${body.isActive}, NOW(), NOW())
+      INSERT INTO users (id, "schoolId", email, password, role, "isActive", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${schoolId}, ${body.email}, ${hashedPassword}, 'GURU', ${body.isActive}, NOW(), NOW())
       RETURNING *
     `;
     const newUser = newUserResult[0];
 
     // Then create Guru with the userId
     const newGuruResult = await sql`
-      INSERT INTO guru ("schoolId", "userId", "nipUsername", nama, email, alamat, "jenisKelamin", "isActive", "createdAt", "updatedAt")
-      VALUES (${schoolId}, ${newUser.id}, ${body.nipUsername}, ${body.nama}, ${body.email}, ${body.alamat || null}, ${body.jenisKelamin}, ${body.isActive}, NOW(), NOW())
+      INSERT INTO guru (id, "schoolId", "userId", "nipUsername", nama, email, alamat, "jenisKelamin", "isActive", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${schoolId}, ${newUser.id}, ${body.nipUsername}, ${body.nama}, ${body.email}, ${body.alamat || null}, ${body.jenisKelamin}, ${body.isActive}, NOW(), NOW())
       RETURNING *
     `;
     const newGuru = newGuruResult[0];
@@ -257,6 +258,130 @@ guru.delete('/:id', requireRole('ADMIN'), async (c) => {
   } catch (error: any) {
     console.error('Error deleting guru:', error);
     return c.json({ success: false, error: error.message || 'Gagal menghapus guru' }, 500);
+  }
+});
+
+// GET /guru/profile - Get current guru profile
+guru.get('/profile', requireRole('GURU'), async (c) => {
+  try {
+    const user = c.get('user');
+    
+    const guruData = await sql`
+      SELECT g.*, u.email,
+        (SELECT COUNT(*) FROM ujian WHERE "guruId" = g.id) as "totalUjian",
+        (SELECT COUNT(*) FROM soal s JOIN ujian u ON u.id = s."ujianId" WHERE u."guruId" = g.id) as "totalSoal"
+      FROM guru g
+      JOIN users u ON u.id = g."userId"
+      WHERE g."userId" = ${user.userId}
+      LIMIT 1
+    `;
+
+    if (!guruData[0]) {
+      return c.json({ success: false, error: 'Guru tidak ditemukan' }, 404);
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        id: guruData[0].id,
+        nama: guruData[0].nama,
+        nip: guruData[0].nip,
+        email: guruData[0].email,
+        foto: guruData[0].foto,
+        totalUjian: parseInt(guruData[0].totalUjian || '0'),
+        totalSoal: parseInt(guruData[0].totalSoal || '0'),
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching guru profile:', error);
+    return c.json({ success: false, error: 'Gagal mengambil profil' }, 500);
+  }
+});
+
+// PUT /guru/profile - Update current guru profile
+guru.put('/profile', requireRole('GURU'), async (c) => {
+  try {
+    const user = c.get('user');
+    const body = await c.req.json();
+    const { nama, nip, foto } = body;
+
+    // Get guru id
+    const guruData = await sql`SELECT id FROM guru WHERE "userId" = ${user.userId} LIMIT 1`;
+    if (!guruData[0]) {
+      return c.json({ success: false, error: 'Guru tidak ditemukan' }, 404);
+    }
+
+    // Build update query
+    const updates: any = {};
+    if (nama !== undefined) updates.nama = nama;
+    if (nip !== undefined) updates.nip = nip;
+    if (foto !== undefined) updates.foto = foto;
+
+    if (Object.keys(updates).length === 0) {
+      return c.json({ success: false, error: 'Tidak ada data yang diupdate' }, 400);
+    }
+
+    // Update guru
+    if (updates.nama && updates.nip && updates.foto) {
+      await sql`UPDATE guru SET nama = ${updates.nama}, nip = ${updates.nip}, foto = ${updates.foto}, "updatedAt" = NOW() WHERE id = ${guruData[0].id}`;
+    } else if (updates.nama && updates.nip) {
+      await sql`UPDATE guru SET nama = ${updates.nama}, nip = ${updates.nip}, "updatedAt" = NOW() WHERE id = ${guruData[0].id}`;
+    } else if (updates.nama && updates.foto) {
+      await sql`UPDATE guru SET nama = ${updates.nama}, foto = ${updates.foto}, "updatedAt" = NOW() WHERE id = ${guruData[0].id}`;
+    } else if (updates.nip && updates.foto) {
+      await sql`UPDATE guru SET nip = ${updates.nip}, foto = ${updates.foto}, "updatedAt" = NOW() WHERE id = ${guruData[0].id}`;
+    } else if (updates.nama) {
+      await sql`UPDATE guru SET nama = ${updates.nama}, "updatedAt" = NOW() WHERE id = ${guruData[0].id}`;
+    } else if (updates.nip) {
+      await sql`UPDATE guru SET nip = ${updates.nip}, "updatedAt" = NOW() WHERE id = ${guruData[0].id}`;
+    } else if (updates.foto) {
+      await sql`UPDATE guru SET foto = ${updates.foto}, "updatedAt" = NOW() WHERE id = ${guruData[0].id}`;
+    }
+
+    return c.json({ success: true, message: 'Profil berhasil diperbarui' });
+  } catch (error: any) {
+    console.error('Error updating guru profile:', error);
+    return c.json({ success: false, error: 'Gagal memperbarui profil' }, 500);
+  }
+});
+
+// PUT /guru/profile/password - Change password
+guru.put('/profile/password', requireRole('GURU'), async (c) => {
+  try {
+    const user = c.get('user');
+    const body = await c.req.json();
+    const { oldPassword, newPassword } = body;
+
+    if (!oldPassword || !newPassword) {
+      return c.json({ success: false, error: 'Password lama dan baru harus diisi' }, 400);
+    }
+
+    if (newPassword.length < 6) {
+      return c.json({ success: false, error: 'Password minimal 6 karakter' }, 400);
+    }
+
+    // Get user with password
+    const userData = await sql`SELECT id, password FROM users WHERE id = ${user.userId} LIMIT 1`;
+    if (!userData[0]) {
+      return c.json({ success: false, error: 'User tidak ditemukan' }, 404);
+    }
+
+    // Verify old password
+    const isValidPassword = await bcrypt.compare(oldPassword, userData[0].password);
+    if (!isValidPassword) {
+      return c.json({ success: false, error: 'Password lama tidak sesuai' }, 400);
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    await sql`UPDATE users SET password = ${hashedPassword}, "updatedAt" = NOW() WHERE id = ${user.userId}`;
+
+    return c.json({ success: true, message: 'Password berhasil diubah' });
+  } catch (error: any) {
+    console.error('Error changing password:', error);
+    return c.json({ success: false, error: 'Gagal mengubah password' }, 500);
   }
 });
 
