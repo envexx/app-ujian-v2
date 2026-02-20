@@ -1,9 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Static export for Cloudflare Pages
-  output: 'export',
-  trailingSlash: true,
-  
   // Skip type checking during build (faster builds)
   typescript: {
     ignoreBuildErrors: true,
@@ -13,7 +9,7 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   
-  // Required for static export
+  // Images configuration
   images: {
     unoptimized: true,
   },
