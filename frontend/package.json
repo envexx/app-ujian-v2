@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:pages": "npx @cloudflare/next-on-pages",
     "start": "next start",
+    "pages:build": "npx @cloudflare/next-on-pages",
     "preview": "npx wrangler pages dev .vercel/output/static",
     "lint": "biome lint",
     "format": "biome format --write",
@@ -71,7 +71,7 @@
     "mammoth": "^1.11.0",
     "mathjax-full": "^3.2.1",
     "mathlive": "^0.108.2",
-    "next": "15.5.2",
+    "next": "15.1.0",
     "next-themes": "^0.4.6",
     "qrcode": "^1.5.4",
     "quill": "^2.0.3",
