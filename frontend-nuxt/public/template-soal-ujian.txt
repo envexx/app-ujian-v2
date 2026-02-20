@@ -1,0 +1,46 @@
+TEMPLATE SOAL UJIAN
+
+A. PILIHAN GANDA
+
+1. Pertanyaan soal nomor 1?
+A. Pilihan A
+B. Pilihan B
+C. Pilihan C
+D. Pilihan D
+Kunci Jawaban: A
+
+2. Pertanyaan soal nomor 2?
+A. Pilihan A
+B. Pilihan B
+C. Pilihan C
+D. Pilihan D
+Kunci Jawaban: B
+
+3. Pertanyaan soal nomor 3?
+A. Pilihan A
+B. Pilihan B
+C. Pilihan C
+D. Pilihan D
+Kunci Jawaban: C
+
+
+B. ESSAY
+
+1. Jelaskan tentang topik pertama...
+Kunci Jawaban: Jawaban harus mencakup poin-poin berikut:
+- Poin penting 1
+- Poin penting 2
+- Poin penting 3
+
+2. Uraikan mengenai topik kedua...
+Kunci Jawaban: Siswa harus menjelaskan dengan detail tentang konsep utama dan memberikan contoh yang relevan.
+
+3. Analisis kasus berikut...
+Kunci Jawaban: Analisis harus mencakup identifikasi masalah, penyebab, dan solusi yang tepat.
+
+
+CATATAN:
+- Untuk soal Pilihan Ganda: Pastikan format "Kunci Jawaban: X" (X = A/B/C/D)
+- Untuk soal Essay: Tulis kunci jawaban setelah "Kunci Jawaban:"
+- Gunakan format penomoran yang konsisten (1., 2., 3., dst)
+- Pisahkan section Pilihan Ganda dan Essay dengan jelas

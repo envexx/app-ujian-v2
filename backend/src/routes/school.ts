@@ -27,7 +27,7 @@ school.get('/info', async (c) => {
       return c.json({
         success: true,
         data: {
-          nama: 'E-Learning System',
+          nama: 'Nilai Online',
           logo: null,
           alamat: null,
           telepon: null,
@@ -49,7 +49,7 @@ school.get('/info', async (c) => {
       return c.json({
         success: true,
         data: {
-          nama: 'E-Learning System',
+          nama: 'Nilai Online',
           logo: null,
           alamat: null,
           telepon: null,
@@ -73,7 +73,7 @@ school.get('/info', async (c) => {
     return c.json({
       success: true,
       data: {
-        nama: 'E-Learning System',
+        nama: 'Nilai Online',
         logo: null,
       },
     });

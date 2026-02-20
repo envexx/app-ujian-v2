@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #f8f9fb;
+    --foreground: #1a1d26;
+    --card: #ffffff;
+    --card-foreground: #1a1d26;
+    --primary: #f97316;
+    --primary-foreground: #ffffff;
+    --secondary: #f1f5f9;
+    --secondary-foreground: #475569;
+    --muted: #f1f5f9;
+    --muted-foreground: #64748b;
+    --accent: #f1f5f9;
+    --accent-foreground: #1a1d26;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --border: #e2e8f0;
+    --input: #e2e8f0;
+    --ring: #f97316;
+    --radius: 12px;
+    
+    --sidebar-bg: #ffffff;
+    --sidebar-border: #f1f5f9;
+    --sidebar-active: #fff7ed;
+    --sidebar-active-text: #f97316;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-[var(--border)];
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .card-shadow {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  }
+  
+  .card-shadow-lg {
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  }
+  
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200;
+  }
+  
+  .sidebar-item-active {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-active-text);
+  }
+  
+  .sidebar-item-inactive {
+    @apply text-gray-600 hover:bg-gray-50;
+  }
+  
+  .btn-primary {
+    @apply bg-[var(--primary)] text-white hover:bg-orange-600 shadow-sm;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm;
+    @apply focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500;
+    @apply placeholder:text-gray-400 transition-all duration-200;
+  }
+  
+  .badge-orange {
+    @apply inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-orange-100 text-orange-700;
+  }
+  
+  .badge-blue {
+    @apply inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-100 text-blue-700;
+  }
+  
+  .badge-green {
+    @apply inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-green-100 text-green-700;
+  }
+  
+  .badge-purple {
+    @apply inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700;
+  }
+  
+  .badge-red {
+    @apply inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-red-100 text-red-700;
+  }
+}
+
+@layer utilities {
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
+
+html {
+  overscroll-behavior: none;
+}

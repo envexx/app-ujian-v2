@@ -27,7 +27,7 @@ export async function sendEmail(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: options.from || 'E-Learning Platform <noreply@nilai.online>',
+        from: options.from || 'Nilai Online <noreply@nilai.online>',
         to: [options.to],
         subject: options.subject,
         html: options.html,
@@ -61,7 +61,7 @@ export async function sendPasswordResetEmail(
   const html = `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <div style="text-align: center; margin-bottom: 30px;">
-        <h1 style="color: #4f46e5; margin: 0;">E-Learning Platform</h1>
+        <h1 style="color: #4f46e5; margin: 0;">Nilai Online</h1>
       </div>
       <div style="background: #f8f9fb; border-radius: 12px; padding: 30px;">
         <h2 style="color: #1f2937; margin-top: 0;">Reset Password</h2>
@@ -88,7 +88,7 @@ export async function sendPasswordResetEmail(
 
   return sendEmail(resendApiKey, {
     to: email,
-    subject: 'Reset Password - E-Learning Platform',
+    subject: 'Reset Password - Nilai Online',
     html,
   });
 }

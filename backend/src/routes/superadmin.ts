@@ -650,7 +650,7 @@ superadmin.post('/smtp', requireSuperAdmin, async (c) => {
       VALUES (
         ${data.host || 'api.resend.com'}, ${data.port || 443}, ${data.secure ?? true},
         ${data.user || 'resend'}, ${data.pass || ''},
-        ${data.fromName || 'E-Learning Platform'}, ${data.fromEmail || 'noreply@nilai.online'},
+        ${data.fromName || 'Nilai Online'}, ${data.fromEmail || 'noreply@nilai.online'},
         true, NOW(), NOW()
       )
       RETURNING id, host, port, secure, "user", "fromName", "fromEmail", "isActive"

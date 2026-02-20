@@ -29,7 +29,7 @@ app.use('*', corsMiddleware);
 // Health check endpoint
 app.get('/', (c) => {
   return c.json({
-    name: 'LMS Backend API',
+    name: 'Nilai Online API',
     version: '1.0.0',
     status: 'healthy',
     runtime: 'Cloudflare Workers',
