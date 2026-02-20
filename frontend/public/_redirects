@@ -1,0 +1,3 @@
+# Cloudflare Pages redirects
+/dashboard /dashboard/default 302
+/login /admin-guru 301
