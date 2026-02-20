@@ -5,13 +5,9 @@ const nextConfig = {
     removeConsole: process.env.NODE_ENV === "production" ? { exclude: ["error", "warn"] } : false,
   },
   
-  // Static export for Cloudflare Pages
-  output: 'export',
-  trailingSlash: true,
-  
   // Cloudflare Pages compatible configuration
   images: {
-    unoptimized: true, // Required for static export
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
@@ -29,8 +25,33 @@ const nextConfig = {
     ignoreBuildErrors: false,
   },
   
-  // Note: redirects and headers are not supported with static export
-  // Use _redirects file or Cloudflare Pages rules instead
+  async redirects() {
+    return [
+      {
+        source: "/dashboard",
+        destination: "/dashboard/default",
+        permanent: false,
+      },
+      {
+        source: "/login",
+        destination: "/admin-guru",
+        permanent: true,
+      },
+    ];
+  },
+  
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'origin-when-cross-origin' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -1,12 +1,10 @@
 name = "app-ujian-v2"
 compatibility_date = "2024-01-01"
-
-[assets]
-directory = "./out"
+compatibility_flags = ["nodejs_compat"]
 
 # Cloudflare Pages Build Settings:
 # - Build command: npm run build
-# - Deploy command: npx wrangler pages deploy out --project-name=app-ujian-v2
+# - Deploy command: npx wrangler pages deploy .vercel/output/static --project-name=app-ujian-v2
 # - Root directory: frontend
 
 # Environment Variables (set in Cloudflare Pages dashboard):
