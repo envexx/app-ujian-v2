@@ -1,9 +1,12 @@
-# Cloudflare Pages configuration for Next.js static export
-# This file is for reference only - configure in Cloudflare Pages dashboard
+name = "app-ujian-v2"
+compatibility_date = "2024-01-01"
 
-# Build Settings (set in Cloudflare Pages dashboard):
+[assets]
+directory = "./out"
+
+# Cloudflare Pages Build Settings:
 # - Build command: npm run build
-# - Build output directory: out
+# - Deploy command: npx wrangler pages deploy out --project-name=app-ujian-v2
 # - Root directory: frontend
 
 # Environment Variables (set in Cloudflare Pages dashboard):
