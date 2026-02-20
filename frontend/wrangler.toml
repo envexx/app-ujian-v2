@@ -1,0 +1,10 @@
+name = "lms-frontend"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+NEXT_PUBLIC_API_URL = "https://your-api-gateway-url.execute-api.ap-southeast-1.amazonaws.com/api"
+
+# Build configuration for Next.js on Cloudflare Pages
+# Note: This file is for reference. Cloudflare Pages uses its own build system.
+# Set environment variables in Cloudflare Pages dashboard instead.
