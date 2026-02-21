@@ -23,6 +23,9 @@ export const corsMiddleware = async (c: Context, next: Next) => {
       // Allow Cloudflare Pages domains
       if (origin?.endsWith('.pages.dev')) return origin;
 
+      // Allow nilai.online subdomains
+      if (origin?.endsWith('.nilai.online') || origin === 'https://nilai.online') return origin;
+
       return null;
     },
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],

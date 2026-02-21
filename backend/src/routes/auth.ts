@@ -81,8 +81,8 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
       path: sessionCookie.attributes.path,
       maxAge: sessionCookie.attributes.maxAge,
       httpOnly: true,
-      secure: c.env?.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
     });
 
     // Get profile data based on role
@@ -211,8 +211,8 @@ auth.post('/siswa-login', zValidator('json', siswaLoginSchema), async (c) => {
       path: sessionCookie.attributes.path,
       maxAge: sessionCookie.attributes.maxAge,
       httpOnly: true,
-      secure: c.env?.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
     });
 
     return c.json({
@@ -323,8 +323,8 @@ auth.get('/session', async (c) => {
         path: sessionCookie.attributes.path,
         maxAge: sessionCookie.attributes.maxAge,
         httpOnly: true,
-        secure: c.env?.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: true,
+        sameSite: 'none',
       });
     }
 
